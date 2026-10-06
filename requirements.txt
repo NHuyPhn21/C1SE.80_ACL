@@ -1,0 +1,8 @@
+streamlit
+sqlalchemy
+ultralytics
+manga-ocr
+google-generativeai
+openai
+opencv-python
+pillow
