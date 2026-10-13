@@ -1,9 +1,5 @@
-"""Settings page."""
+"""Settings page (redirects to canonical 6_Settings.py)."""
 
 import streamlit as st
 
-from utils.auth_session import require_auth
-
-
-require_auth()
-st.title("Settings")
+st.switch_page("pages/6_Settings.py")

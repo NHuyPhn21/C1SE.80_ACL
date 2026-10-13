@@ -1,9 +1,5 @@
-"""Review Studio page."""
+"""Review Studio page (redirects to canonical 3_Review_Studio.py)."""
 
 import streamlit as st
 
-from utils.auth_session import require_auth
-
-
-require_auth()
-st.title("Review Studio")
+st.switch_page("pages/3_Review_Studio.py")
