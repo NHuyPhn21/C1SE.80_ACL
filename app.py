@@ -17,9 +17,61 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        #MainMenu, footer, [data-testid="stToolbar"],
-        [data-testid="stDecoration"], [data-testid="stStatusWidget"] {
+        /* Hide Streamlit default decoration, hamburger menu, and deploy button */
+        #MainMenu, footer, [data-testid="stDecoration"], [data-testid="stStatusWidget"],
+        [data-testid="manage-app-button"] {
             display: none !important;
+        }
+
+        /* Ensure header is transparent and allows pointer events */
+        [data-testid="stHeader"] {
+            background: transparent !important;
+            pointer-events: auto !important;
+            z-index: 1000 !important;
+        }
+        [data-testid="stToolbar"] {
+            display: flex !important;
+            visibility: visible !important;
+            background: transparent !important;
+            pointer-events: auto !important;
+        }
+
+        /* Prominently position the sidebar expand button (chevron arrow) at top-left when sidebar collapses */
+        [data-testid="stExpandSidebarButton"],
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="collapsedControl"] {
+            display: inline-flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            position: fixed !important;
+            top: 14px !important;
+            left: 14px !important;
+            z-index: 9999999 !important;
+            background: #ffffff !important;
+            color: #25326f !important;
+            border: 1px solid #d0d7de !important;
+            border-radius: 8px !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15) !important;
+            width: 38px !important;
+            height: 38px !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer !important;
+        }
+        [data-testid="stExpandSidebarButton"]:hover,
+        [data-testid="collapsedControl"]:hover {
+            background: #f0f4ff !important;
+            border-color: #25326f !important;
+        }
+        [data-testid="stExpandSidebarButton"] svg,
+        [data-testid="stSidebarCollapseButton"] svg {
+            fill: #25326f !important;
+            color: #25326f !important;
+        }
+        [data-testid="stExpandSidebarButton"] span,
+        [data-testid="stSidebarCollapseButton"] span {
+            color: #25326f !important;
         }
         html, body, [data-testid="stAppViewContainer"], .stApp {
             background: #f7faf5;
