@@ -5,16 +5,63 @@ from __future__ import annotations
 import os
 import secrets
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Mapping
 
 import requests
+from dotenv import load_dotenv
 
 from models.auth import AuthResult, AuthTokens, User
 
 
+load_dotenv()
+
+
 class AuthServiceError(RuntimeError):
     """A user-safe authentication failure."""
+
+
+@dataclass(frozen=True)
+class AuthApiConfig:
+    base_url: str
+    login_path: str = "/auth/login"
+    register_path: str = "/auth/register"
+    refresh_path: str = "/auth/refresh"
+    logout_path: str = "/auth/logout"
+    timeout: float = 10.0
+    login_identifier_field: str = "email"
+    register_name_field: str = "username"
+
+    @classmethod
+    def from_environment(cls) -> "AuthApiConfig":
+        base_url = os.getenv("AUTH_API_BASE_URL", "").strip()
+        if not base_url:
+            raise AuthServiceError(
+                "AUTH_API_BASE_URL is required when AUTH_BACKEND_MODE=api."
+            )
+
+        try:
+            timeout = float(os.getenv("AUTH_API_TIMEOUT", "10"))
+        except ValueError as exc:
+            raise AuthServiceError("AUTH_API_TIMEOUT must be a number.") from exc
+        if timeout <= 0:
+            raise AuthServiceError("AUTH_API_TIMEOUT must be greater than zero.")
+
+        return cls(
+            base_url=base_url.rstrip("/"),
+            login_path=_environment_path("AUTH_LOGIN_PATH", "/auth/login"),
+            register_path=_environment_path("AUTH_REGISTER_PATH", "/auth/register"),
+            refresh_path=_environment_path("AUTH_REFRESH_PATH", "/auth/refresh"),
+            logout_path=_environment_path("AUTH_LOGOUT_PATH", "/auth/logout"),
+            timeout=timeout,
+            login_identifier_field=_environment_field(
+                "AUTH_LOGIN_IDENTIFIER_FIELD", "email"
+            ),
+            register_name_field=_environment_field(
+                "AUTH_REGISTER_NAME_FIELD", "username"
+            ),
+        )
 
 
 class AuthService(ABC):
@@ -36,19 +83,22 @@ class AuthService(ABC):
 
 
 class HttpAuthService(AuthService):
-    """HTTP adapter matching the future backend authentication contract."""
+    """HTTP adapter for the configured backend authentication contract."""
 
-    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.client = requests.Session()
+    def __init__(
+        self,
+        config: AuthApiConfig,
+        client: requests.Session | None = None,
+    ) -> None:
+        self.config = config
+        self.client = client or requests.Session()
 
     def login(self, email: str, password: str, remember_me: bool) -> AuthResult:
         payload = self._request(
             "POST",
-            "/auth/login",
+            self.config.login_path,
             json={
-                "email": email,
+                self.config.login_identifier_field: email,
                 "password": password,
                 "remember_me": remember_me,
             },
@@ -58,17 +108,25 @@ class HttpAuthService(AuthService):
     def register(self, full_name: str, email: str, password: str) -> AuthResult:
         payload = self._request(
             "POST",
-            "/auth/register",
-            json={"full_name": full_name, "email": email, "password": password},
+            self.config.register_path,
+            json={
+                self.config.register_name_field: full_name,
+                "email": email,
+                "password": password,
+            },
         )
         return self._auth_result(payload)
 
     def logout(self, access_token: str) -> None:
-        self._request("POST", "/auth/logout", access_token=access_token)
+        self._request(
+            "POST", self.config.logout_path, access_token=access_token, allow_empty=True
+        )
 
     def refresh(self, refresh_token: str) -> AuthTokens:
         payload = self._request(
-            "POST", "/auth/refresh", json={"refresh_token": refresh_token}
+            "POST",
+            self.config.refresh_path,
+            json={"refresh_token": refresh_token},
         )
         data = payload.get("data", payload)
         if not isinstance(data, Mapping):
@@ -98,27 +156,28 @@ class HttpAuthService(AuthService):
         *,
         json: Mapping[str, Any] | None = None,
         access_token: str | None = None,
+        allow_empty: bool = False,
     ) -> Mapping[str, Any]:
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
 
         try:
             response = self.client.request(
                 method,
-                f"{self.base_url}{path}",
+                f"{self.config.base_url}{path}",
                 json=json,
                 headers=headers,
-                timeout=self.timeout,
+                timeout=self.config.timeout,
             )
         except requests.RequestException as exc:
             raise AuthServiceError(
                 "Authentication service is unavailable. Please try again."
             ) from exc
 
-        payload = _response_payload(response)
+        payload = _response_payload(response, allow_empty=allow_empty)
         if not response.ok:
-            message = payload.get("message") or payload.get("detail")
+            message = _error_message(payload)
             raise AuthServiceError(
                 str(message or "Authentication request was rejected.")
             )
@@ -155,17 +214,16 @@ def get_auth_service() -> AuthService:
     if mode != "api":
         raise AuthServiceError("AUTH_BACKEND_MODE must be either 'mock' or 'api'.")
 
-    base_url = os.getenv("AUTH_API_BASE_URL", "").strip()
-    if not base_url:
-        raise AuthServiceError(
-            "AUTH_API_BASE_URL is required when AUTH_BACKEND_MODE=api."
-        )
-    return HttpAuthService(base_url=base_url)
+    return HttpAuthService(config=AuthApiConfig.from_environment())
 
 
-def _response_payload(response: requests.Response) -> Mapping[str, Any]:
+def _response_payload(
+    response: requests.Response, *, allow_empty: bool = False
+) -> Mapping[str, Any]:
     if not response.content:
-        return {}
+        if allow_empty or response.ok:
+            return {}
+        raise AuthServiceError("Authentication server returned an empty response.")
     try:
         payload = response.json()
     except requests.ValueError as exc:
@@ -175,6 +233,38 @@ def _response_payload(response: requests.Response) -> Mapping[str, Any]:
     if not isinstance(payload, Mapping):
         raise AuthServiceError("Authentication server returned an invalid response.")
     return payload
+
+
+def _error_message(payload: Mapping[str, Any]) -> str | None:
+    message = payload.get("message") or payload.get("error") or payload.get("detail")
+    if isinstance(message, str):
+        return message
+    if isinstance(message, Mapping):
+        nested = message.get("message") or message.get("detail")
+        return str(nested) if nested else None
+    if isinstance(message, list):
+        messages = []
+        for item in message:
+            if isinstance(item, Mapping):
+                text = item.get("msg") or item.get("message")
+                if text:
+                    messages.append(str(text))
+            elif item:
+                messages.append(str(item))
+        return "; ".join(messages) or None
+    return str(message) if message else None
+
+
+def _environment_path(name: str, default: str) -> str:
+    value = os.getenv(name, default).strip() or default
+    return value if value.startswith("/") else f"/{value}"
+
+
+def _environment_field(name: str, default: str) -> str:
+    value = os.getenv(name, default).strip()
+    if not value:
+        raise AuthServiceError(f"{name} cannot be empty.")
+    return value
 
 
 def _validate_credentials(email: str, password: str) -> None:
