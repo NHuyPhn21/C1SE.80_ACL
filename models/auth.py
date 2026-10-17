@@ -20,6 +20,7 @@ class User:
                 payload.get("full_name")
                 or payload.get("fullName")
                 or payload.get("name")
+                or payload.get("username")
                 or payload["email"].split("@", 1)[0]
             ),
             role=str(payload.get("role") or "member"),
@@ -37,11 +38,21 @@ class AuthTokens:
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "AuthTokens":
+        access_token = (
+            payload.get("access_token")
+            or payload.get("accessToken")
+            or payload.get("token")
+        )
+        if not access_token:
+            raise ValueError("Authentication response is missing an access token")
+
         return cls(
-            access_token=str(payload.get("access_token") or payload["accessToken"]),
+            access_token=str(access_token),
             refresh_token=payload.get("refresh_token") or payload.get("refreshToken"),
             expires_in=_optional_int(
-                payload.get("expires_in") or payload.get("expiresIn")
+                payload.get("expires_in")
+                if payload.get("expires_in") is not None
+                else payload.get("expiresIn")
             ),
         )
 
@@ -57,7 +68,7 @@ class AuthResult:
         if not isinstance(data, Mapping):
             raise ValueError("Authentication response must be a JSON object")
 
-        user_payload = data.get("user")
+        user_payload = data.get("user") or payload.get("user")
         if not isinstance(user_payload, Mapping):
             raise ValueError("Authentication response is missing user data")
 
