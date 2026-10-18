@@ -13,6 +13,8 @@ import requests
 from dotenv import load_dotenv
 
 from models.auth import AuthResult, AuthTokens, User
+from models.api_error import ApiError
+from services.error_handler import from_exception, from_http_response
 
 
 load_dotenv()
@@ -20,6 +22,10 @@ load_dotenv()
 
 class AuthServiceError(RuntimeError):
     """A user-safe authentication failure."""
+
+    def __init__(self, message: str, api_error: ApiError | None = None) -> None:
+        super().__init__(message)
+        self.api_error = api_error
 
 
 @dataclass(frozen=True)
@@ -171,16 +177,13 @@ class HttpAuthService(AuthService):
                 timeout=self.config.timeout,
             )
         except requests.RequestException as exc:
-            raise AuthServiceError(
-                "Authentication service is unavailable. Please try again."
-            ) from exc
+            error = from_exception(exc)
+            raise AuthServiceError(error.message, api_error=error) from exc
 
-        payload = _response_payload(response, allow_empty=allow_empty)
         if not response.ok:
-            message = _error_message(payload)
-            raise AuthServiceError(
-                str(message or "Authentication request was rejected.")
-            )
+            error = from_http_response(response)
+            raise AuthServiceError(error.message, api_error=error)
+        payload = _response_payload(response, allow_empty=allow_empty)
         return payload
 
 
@@ -233,26 +236,6 @@ def _response_payload(
     if not isinstance(payload, Mapping):
         raise AuthServiceError("Authentication server returned an invalid response.")
     return payload
-
-
-def _error_message(payload: Mapping[str, Any]) -> str | None:
-    message = payload.get("message") or payload.get("error") or payload.get("detail")
-    if isinstance(message, str):
-        return message
-    if isinstance(message, Mapping):
-        nested = message.get("message") or message.get("detail")
-        return str(nested) if nested else None
-    if isinstance(message, list):
-        messages = []
-        for item in message:
-            if isinstance(item, Mapping):
-                text = item.get("msg") or item.get("message")
-                if text:
-                    messages.append(str(text))
-            elif item:
-                messages.append(str(item))
-        return "; ".join(messages) or None
-    return str(message) if message else None
 
 
 def _environment_path(name: str, default: str) -> str:
