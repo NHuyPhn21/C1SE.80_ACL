@@ -18,6 +18,7 @@ def _response(status: int, payload: object | None = None) -> Mock:
     response = Mock(spec=requests.Response)
     response.ok = 200 <= status < 300
     response.status_code = status
+    response.headers = {}
     response.content = b"" if payload is None else b"json"
     response.json.return_value = payload
     return response
@@ -143,7 +144,7 @@ class HttpAuthServiceTests(unittest.TestCase):
     def test_network_failure_uses_safe_message(self) -> None:
         self.client.request.side_effect = requests.Timeout("timed out")
 
-        with self.assertRaisesRegex(AuthServiceError, "service is unavailable"):
+        with self.assertRaisesRegex(AuthServiceError, "took too long"):
             self.service.login("user@example.com", "password", False)
 
 
