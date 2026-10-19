@@ -125,7 +125,8 @@ def _refresh_if_needed() -> bool:
 
 def _store_tokens(tokens: AuthTokens) -> None:
     st.session_state[ACCESS_TOKEN] = tokens.access_token
-    st.session_state[REFRESH_TOKEN] = tokens.refresh_token
+    if tokens.refresh_token:
+        st.session_state[REFRESH_TOKEN] = tokens.refresh_token
     st.session_state[EXPIRES_AT] = (
         datetime.now(UTC) + timedelta(seconds=tokens.expires_in)
         if tokens.expires_in
