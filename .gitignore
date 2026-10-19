@@ -1,5 +1,14 @@
+# Bỏ qua dataset ảnh
+manga_dataset/
+data/
+
+# Bỏ qua các file kết quả và trọng số của YOLO
+models/yolo/
+*.pt
+
+# Bỏ qua file Database cục bộ
+acl.db
+
+# Bỏ qua môi trường ảo
 venv/
 __pycache__/
-.env
-data/
-*.sqlite3
