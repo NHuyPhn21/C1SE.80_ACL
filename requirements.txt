@@ -46,8 +46,8 @@ narwhals==2.19.0
 nest-asyncio2==1.7.2
 networkx==3.6.1
 numba==0.65.0
-numpy==2.4.4
-opencv-python==4.13.0.92
+numpy==1.26.4
+opencv-python==4.9.0.80
 optuna==4.8.0
 packaging==26.0
 pandas==3.0.2
@@ -78,7 +78,7 @@ scikit-learn==1.8.0
 scipy==1.17.1
 seaborn==0.13.2
 setuptools==82.0.1
-shap==0.51.0
+shap==0.44.1
 six==1.17.0
 slicer==0.0.8
 smmap==5.0.3
@@ -87,7 +87,7 @@ stack-data==0.6.3
 streamlit==1.56.0
 tenacity==9.1.4
 threadpoolctl==3.6.0
-tifffile==2026.4.11
+tifffile
 toml==0.10.2
 tornado==6.5.5
 tqdm==4.67.3
@@ -100,8 +100,6 @@ wcwidth==0.8.1
 xgboost==3.2.0
 xlsxwriter==3.2.9
 ultralytics==8.2.0
-torch
-torchvision
 manga-ocr
 google-generativeai
 openai
