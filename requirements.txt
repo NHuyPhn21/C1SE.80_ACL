@@ -106,3 +106,8 @@ manga-ocr
 google-generativeai
 openai
 python-dotenv
+bcrypt
+openpyxl
+pytest
+sendgrid
+streamlit-drawable-canvas

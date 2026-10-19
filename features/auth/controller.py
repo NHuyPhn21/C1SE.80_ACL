@@ -15,7 +15,11 @@ from utils.auth_session import (
 
 
 def render_auth_page(initial_view: str) -> None:
-    if is_authenticated():
+    if st.query_params.get("logout") == "1":
+        from utils.auth_session import logout
+        logout()
+
+    if is_authenticated() and not st.session_state.get("auth.logged_out"):
         st.switch_page("pages/1_Workspace.py")
         return
 
