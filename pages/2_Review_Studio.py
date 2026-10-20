@@ -17,6 +17,7 @@ user = require_auth()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 user_name = user.full_name or "Phan Van Quan"
+project_name = st.query_params.get("project", "Shonen Weekly #112")
 
 review_studio_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -288,9 +289,9 @@ tailwind.config = {{
             <span>Workspace</span>
           </a>
           <span class="text-outline-variant">/</span>
-          <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" onclick="navigateParent('chapter-studio')">Chapter Studio</a>
+          <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{project_name}'))">Chapter Studio</a>
           <span class="text-outline-variant">/</span>
-          <span class="text-on-surface font-medium notranslate" translate="no">Shonen Weekly #112</span>
+          <span class="text-on-surface font-medium notranslate" translate="no">{project_name}</span>
           <span class="text-outline-variant">/</span>
           <span class="text-primary font-semibold">Interactive Review Studio</span>
         </div>

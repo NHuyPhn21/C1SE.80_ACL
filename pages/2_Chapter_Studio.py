@@ -17,6 +17,7 @@ user = require_auth()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 user_name = user.full_name or "Phan Van Quan"
+project_name = st.query_params.get("project", "Shonen Weekly #112")
 
 chapter_studio_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -278,14 +279,14 @@ tailwind.config = {{
             <span>Back to Projects</span>
           </a>
           <span class="text-outline-variant font-code-sm">/</span>
-          <span class="text-on-surface-variant notranslate" translate="no">Shonen Weekly #112</span>
+          <span class="text-on-surface-variant notranslate" translate="no">{project_name}</span>
           <span class="text-outline-variant font-code-sm">/</span>
           <span class="font-title-md text-primary font-semibold">Chapter Studio</span>
-          <a class="text-xs font-semibold px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('team-roles')" title="View assigned team roles for Shonen Weekly #112">
+          <a class="text-xs font-semibold px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('team-roles?project=' + encodeURIComponent('{project_name}'))" title="View assigned team roles for {project_name}">
             <span class="material-symbols-outlined text-[14px]">groups</span>
             <span>Team Roles</span>
           </a>
-          <a class="text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary-container/40 text-on-secondary-container hover:bg-secondary-container transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('review-studio')" title="Jump to Review Studio">
+          <a class="text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary-container/40 text-on-secondary-container hover:bg-secondary-container transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('review-studio?project=' + encodeURIComponent('{project_name}'))" title="Jump to Review Studio">
             <span>Review Studio</span>
             <span class="material-symbols-outlined text-[13px]">arrow_forward</span>
           </a>
