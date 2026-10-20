@@ -47,7 +47,10 @@ pages = [
     st.Page("pages/0_Register.py", title="Register", url_path="register"),
     st.Page("pages/1_Workspace.py", title="Workspace", url_path="workspace"),
     st.Page("pages/1_Team_Workspace.py", title="Team Roles", url_path="team-roles"),
+    st.Page("pages/2_Chapter_Studio.py", title="Chapter Studio", url_path="chapter-studio"),
     st.Page("pages/2_Review_Studio.py", title="Review Studio", url_path="review-studio"),
+    st.Page("pages/4_Typesetting.py", title="Typesetting", url_path="typesetting"),
+    st.Page("pages/5_Queue_Monitor.py", title="Queue Monitor", url_path="queue-monitor"),
     st.Page("pages/3_Settings.py", title="Settings", url_path="settings"),
 ]
 
