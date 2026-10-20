@@ -59,6 +59,93 @@ workspace_html = f"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Sora:wght@600;700;800&subset=vietnamese,latin,latin-ext&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com"></script>
+
+<!-- NODE TOKYO-01 GPU CLUSTER HARDWARE MODAL -->
+<div id="gpu-modal" style="display: none;" onclick="if (event.target === this) closeGpuModal()" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer">
+  <div class="bg-surface-container-lowest rounded-2xl shadow-2xl max-w-lg w-full border border-[#E4DFD6] overflow-hidden transform transition-all animate-fadeIn text-left cursor-default" onclick="event.stopPropagation()">
+    <!-- Modal Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-[#E4DFD6] bg-surface-container-low">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-primary-container text-on-primary flex items-center justify-center font-bold text-sm shadow-sm">
+          <span class="material-symbols-outlined text-[20px]">memory</span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h3 class="font-headline text-base font-bold text-on-surface">Node Tokyo-01</h3>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9] font-code text-[11px] font-semibold">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#2E7D32] animate-pulse"></span>
+              <span>Active • 58°C</span>
+            </span>
+          </div>
+          <p class="font-code text-[11px] text-on-surface-variant mt-0.5">Primary GPU Cluster Node • Tokyo Datacenter DC-02</p>
+        </div>
+      </div>
+      <button onclick="closeGpuModal()" class="p-1.5 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" title="Close (Esc)">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+
+    <!-- Modal Body: Hardware Specs -->
+    <div class="p-6 space-y-4">
+      <!-- Hardware Card -->
+      <div class="p-4 bg-surface-container-low rounded-xl border border-[#E4DFD6] space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="font-code text-xs uppercase tracking-wider text-outline font-semibold">ACCELERATOR</span>
+          <span class="font-code text-xs text-primary-container font-bold">Device #0</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <div class="font-headline text-base font-bold text-on-surface">NVIDIA GeForce RTX 4090</div>
+          <div class="font-code text-xs font-semibold text-secondary">Ada Lovelace • 16,384 CUDA Cores</div>
+        </div>
+        <!-- VRAM Progress -->
+        <div>
+          <div class="flex items-center justify-between font-code text-xs mb-1.5">
+            <span class="text-on-surface-variant">VRAM Allocation: <strong>15.4 GB / 24.0 GB</strong></span>
+            <span class="text-primary-container font-semibold">64.2% Load</span>
+          </div>
+          <div class="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+            <div class="bg-primary-container h-full rounded-full transition-all duration-500" style="width: 64.2%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Metrics Grid -->
+      <div class="grid grid-cols-2 gap-3 font-code text-xs">
+        <div class="p-3 bg-surface-container-low rounded-xl border border-[#E4DFD6]">
+          <span class="text-outline text-[11px] block mb-0.5">RUNTIME DRIVER</span>
+          <span class="font-bold text-on-surface">CUDA 12.2 / cuDNN 8.9</span>
+        </div>
+        <div class="p-3 bg-surface-container-low rounded-xl border border-[#E4DFD6]">
+          <span class="text-outline text-[11px] block mb-0.5">DAEMON PROCESS</span>
+          <span class="font-bold text-secondary flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+            <span>PID 8421 (Running)</span>
+          </span>
+        </div>
+        <div class="p-3 bg-surface-container-low rounded-xl border border-[#E4DFD6]">
+          <span class="text-outline text-[11px] block mb-0.5">CURRENT INFERENCE</span>
+          <span class="font-bold text-on-surface">Manga-OCR + LaMa</span>
+        </div>
+        <div class="p-3 bg-surface-container-low rounded-xl border border-[#E4DFD6]">
+          <span class="text-outline text-[11px] block mb-0.5">THERMAL / FAN</span>
+          <span class="font-bold text-on-surface">58°C • Fan 42% (Normal)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="px-6 py-3.5 bg-surface-container-low border-t border-[#E4DFD6] flex items-center justify-between">
+      <button onclick="closeGpuModal()" class="px-4 py-2 rounded-full text-xs font-semibold text-on-surface-variant hover:bg-surface-container transition-colors cursor-pointer">
+        Close
+      </button>
+      <button onclick="closeGpuModal(); navigateParent('queue-monitor');" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-primary-container text-on-primary hover:bg-primary transition-colors cursor-pointer shadow-sm">
+        <span class="material-symbols-outlined text-[16px]">schedule</span>
+        <span>View Queue Monitor →</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
 tailwind.config = {{
   theme: {{
@@ -197,8 +284,8 @@ font {{
         <input id="header-search-input" class="bg-transparent text-xs outline-none placeholder:text-on-surface-variant w-44 text-on-surface" placeholder="Filter batches or series..." type="text"/>
       </div>
 
-      <!-- Node Tokyo-01 (GPU idle) Pill Badge (Mục 3) -->
-      <a onclick="navigateParent('queue-monitor')" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] hover:bg-[#D8E2EE] text-[#414754] hover:text-[#191C19] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer transition-colors" title="View GPU Cluster Queue on Node Tokyo-01">
+      <!-- Node Tokyo-01 (GPU idle) Pill Badge (Click mở GPU Hardware Modal) -->
+      <a onclick="openGpuModal()" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] hover:bg-[#D8E2EE] text-[#414754] hover:text-[#191C19] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer transition-colors" title="Click to view Node Tokyo-01 GPU hardware status">
         <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
         <span>Node Tokyo-01 (GPU idle)</span>
       </a>
@@ -352,14 +439,18 @@ font {{
               </span>
             </div>
 
-            <!-- Progress Track (75%) -->
+            <!-- Progress Track (75%) with Direct Link to Task 3 (Queue Monitor) -->
             <div class="mt-5">
               <div class="flex justify-between items-center text-xs text-on-surface-variant font-medium mb-1.5">
                 <span>Progress: 18/24 Pages Reviewed</span>
-                <span class="font-semibold text-on-surface">75%</span>
+                <a class="inline-flex items-center gap-1 font-semibold text-primary-container hover:underline cursor-pointer group/q" onclick="navigateParent('queue-monitor?project=Shonen+Weekly+%23112')" title="Inspect Live Pipeline Queue in Task 3 (Queue Monitor)">
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#137333] animate-pulse"></span>
+                  <span>Live Queue (75%)</span>
+                  <span class="material-symbols-outlined text-[13px] group-hover/q:translate-x-0.5 transition-transform">arrow_forward</span>
+                </a>
               </div>
-              <div class="w-full bg-[#E8EAED] rounded-full h-1.5 overflow-hidden">
-                <div class="bg-primary-container h-1.5 rounded-full" style="width: 75%"></div>
+              <div class="w-full bg-[#E8EAED] rounded-full h-1.5 overflow-hidden cursor-pointer group" onclick="navigateParent('queue-monitor?project=Shonen+Weekly+%23112')" title="Click to inspect real-time rendering queue">
+                <div class="bg-primary-container h-1.5 rounded-full transition-all group-hover:opacity-90" style="width: 75%"></div>
               </div>
             </div>
           </div>
@@ -409,8 +500,8 @@ font {{
                 <span>Progress: 14/19 Pages Processed</span>
                 <span class="font-semibold text-on-surface">68%</span>
               </div>
-              <div class="w-full bg-[#E8EAED] rounded-full h-1.5 overflow-hidden">
-                <div class="bg-primary-container h-1.5 rounded-full" style="width: 68%"></div>
+              <div class="w-full bg-[#E8EAED] rounded-full h-1.5 overflow-hidden cursor-pointer group" onclick="navigateParent('queue-monitor?project=One+Piece+-+Chapter+1115')" title="Click to view live queue progress in Queue Monitor">
+                <div class="bg-primary-container h-1.5 rounded-full transition-all group-hover:opacity-90" style="width: 68%"></div>
               </div>
             </div>
           </div>
@@ -628,6 +719,17 @@ font {{
 </div>
 
 <script>
+// GPU Hardware Status Modal
+function openGpuModal() {{
+  const modal = document.getElementById('gpu-modal');
+  if (modal) modal.style.display = 'flex';
+}}
+
+function closeGpuModal() {{
+  const modal = document.getElementById('gpu-modal');
+  if (modal) modal.style.display = 'none';
+}}
+
 // Parent navigation bridge for seamless Streamlit router interaction
 function navigateParent(path) {{
   const target = '/' + path.replace(/^\\//, '');
@@ -758,7 +860,7 @@ modal.addEventListener('click', (e) => {{
 }});
 
 window.addEventListener('keydown', (e) => {{
-  if (e.key === 'Escape' && !modal.classList.contains('opacity-0')) dismissModal();
+  if (e.key === 'Escape') {{ dismissModal(); closeGpuModal(); }}
 }});
 
 if (form) {{
