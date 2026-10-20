@@ -12,3 +12,8 @@ acl.db
 # Bỏ qua môi trường ảo
 venv/
 __pycache__/
+
+# Backups
+backups/
+*_backup.py
+*.sqlite3
