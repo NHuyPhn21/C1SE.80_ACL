@@ -17,6 +17,8 @@ user = require_auth()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 user_name = user.full_name or "Phan Van Quan"
+project_name = st.query_params.get("project", "Shonen Weekly #112")
+file_safe_project = project_name.replace(" ", "_").replace("#", "")
 
 queue_monitor_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -255,31 +257,149 @@ tailwind.config = {{
 <!-- MAIN APP SHELL -->
 <div class="pl-[220px]">
 
-  <!-- TOP HEADER BAR -->
-  <header class="fixed top-0 left-[220px] right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 flex items-center justify-between px-space-lg border-b border-[#E4DFD6]">
-    <div class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">
-      <a class="font-medium text-on-surface hover:text-primary-container transition-colors cursor-pointer" onclick="navigateParent('workspace')">Workspace</a>
-      <span class="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
-      <span class="text-primary-container font-semibold">Queue Monitor</span>
+  <!-- TOP HEADER BAR (SaaS Pro with Notification & Profile Dropdown) -->
+  <header class="fixed top-0 left-[220px] right-0 h-16 bg-surface-container-lowest/95 backdrop-blur-md z-40 px-8 flex items-center justify-between border-b border-[#E4DFD6]">
+    
+    <!-- Left: ACL Studio / Workspace / {project_name} / Queue Monitor Breadcrumb -->
+    <div class="flex items-center gap-2">
+      <span class="text-base font-bold text-on-surface">ACL Studio</span>
+      <span class="text-outline-variant font-light text-sm">/</span>
+      <a class="text-sm text-on-surface-variant font-medium hover:text-on-surface transition-colors cursor-pointer" onclick="navigateParent('workspace')">Workspace</a>
+      <span class="text-outline-variant font-light text-sm">/</span>
+      <a class="text-sm text-on-surface-variant font-medium hover:text-primary-container transition-colors cursor-pointer notranslate" translate="no" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{project_name}'))" title="Open Chapter Studio for {project_name}">{project_name}</a>
+      <span class="text-outline-variant font-light text-sm">/</span>
+      <span class="text-sm text-primary-container font-semibold">Queue Monitor</span>
     </div>
-    <div class="flex items-center gap-space-md">
-      <button aria-label="Notifications" class="flex items-center justify-center w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button">
-        <span class="material-symbols-outlined text-[20px]">notifications</span>
-      </button>
-      <button aria-label="Help &amp; Documentation" class="flex items-center justify-center w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button">
-        <span class="material-symbols-outlined text-[20px]">help</span>
-      </button>
-      <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center font-title-md text-label-md text-on-primary font-semibold tracking-wide select-none notranslate" translate="no" title="{user_name}">
-        {user_initials}
+
+    <!-- Center/Right Header Controls -->
+    <div class="flex items-center gap-4">
+      
+      <!-- Node Tokyo-01 Pill Badge -->
+      <div class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer transition-colors" title="Active Processing Node">
+        <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
+        <span>Node Tokyo-01 (GPU Active)</span>
       </div>
-      <button onclick="navigateParent('login?logout=1')" class="text-on-surface-variant hover:text-primary-container text-xs font-semibold px-2 py-1 rounded border border-[#E4DFD6] hover:bg-surface-variant transition-colors" title="Sign out">
-        Sign out
-      </button>
+
+      <!-- INTERACTIVE NOTIFICATION BELL WITH RED DOT -->
+      <div class="relative">
+        <button id="notif-btn" onclick="toggleNotifDropdown(event)" class="relative p-1.5 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" title="Notifications">
+          <span class="material-symbols-outlined text-[22px]">notifications</span>
+          <span id="notif-badge" class="absolute top-1 right-1 w-2.5 h-2.5 bg-[#DC2626] rounded-full ring-2 ring-white animate-pulse"></span>
+        </button>
+
+        <!-- Notification Popover Dropdown -->
+        <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-surface-container-lowest rounded-2xl shadow-xl border border-[#E4DFD6] py-3 z-50 text-left transition-all">
+          <div class="flex items-center justify-between px-4 pb-2 border-b border-[#E4DFD6]/70">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold text-on-surface">Notifications</span>
+              <span id="notif-count" class="px-2 py-0.5 rounded-full bg-[#FEE2E2] text-[#DC2626] font-code text-[11px] font-semibold">3 New</span>
+            </div>
+            <button onclick="markAllNotifsRead()" class="text-[11px] font-semibold text-primary-container hover:underline cursor-pointer">
+              Mark all read
+            </button>
+          </div>
+          <div class="divide-y divide-[#E4DFD6]/40 max-h-72 overflow-y-auto">
+            <div class="p-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('review-studio?project=' + encodeURIComponent('{project_name}'))">
+              <div class="flex items-start gap-2.5">
+                <span class="notif-dot w-2 h-2 rounded-full bg-[#DC2626] mt-1.5 shrink-0"></span>
+                <div>
+                  <p class="text-xs font-semibold text-on-surface">Batch Processing: Page 013 Ready</p>
+                  <p class="text-[11px] text-on-surface-variant mt-0.5">OCR extraction completed. Awaiting review.</p>
+                  <span class="font-code text-[10px] text-outline mt-1 block">Just now</span>
+                </div>
+              </div>
+            </div>
+            <div class="p-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('queue-monitor?project=' + encodeURIComponent('{project_name}'))">
+              <div class="flex items-start gap-2.5">
+                <span class="notif-dot w-2 h-2 rounded-full bg-[#DC2626] mt-1.5 shrink-0"></span>
+                <div>
+                  <p class="text-xs font-semibold text-on-surface">Worker Pool Active</p>
+                  <p class="text-[11px] text-on-surface-variant mt-0.5">4 Python background workers running smoothly.</p>
+                  <span class="font-code text-[10px] text-outline mt-1 block">5 mins ago</span>
+                </div>
+              </div>
+            </div>
+            <div class="p-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('team-roles?project=' + encodeURIComponent('{project_name}'))">
+              <div class="flex items-start gap-2.5">
+                <span class="notif-dot w-2 h-2 rounded-full bg-[#DC2626] mt-1.5 shrink-0"></span>
+                <div>
+                  <p class="text-xs font-semibold text-on-surface">RBAC Permissions Active</p>
+                  <p class="text-[11px] text-on-surface-variant mt-0.5">Assigned editorial team operating on this project.</p>
+                  <span class="font-code text-[10px] text-outline mt-1 block">1 hour ago</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pt-2 px-4 border-t border-[#E4DFD6]/70 text-center">
+            <a class="text-xs font-semibold text-primary-container hover:underline cursor-pointer" onclick="switchView('completed')">
+              Jump to Chapter Export (ZIP) →
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Profile Menu (Avatar + Chevron Dropdown) -->
+      <div class="relative pl-2 border-l border-[#E4DFD6]">
+        <button id="profile-btn" onclick="toggleProfileDropdown(event)" class="flex items-center gap-1.5 p-1 rounded-full hover:bg-surface-container transition-colors cursor-pointer group" title="Account Menu">
+          <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center font-bold text-xs text-on-primary shadow-sm notranslate" translate="no" title="{user_name}">
+            {user_initials}
+          </div>
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-on-surface transition-transform duration-200">expand_more</span>
+        </button>
+
+        <!-- Profile Popover Dropdown -->
+        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-surface-container-lowest rounded-2xl shadow-xl border border-[#E4DFD6] py-2 z-50 text-left transition-all">
+          <div class="px-4 py-3 border-b border-[#E4DFD6]/70 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center font-bold text-sm text-on-primary shrink-0 notranslate" translate="no">
+              {user_initials}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-bold text-on-surface truncate notranslate" translate="no">{user_name}</div>
+              <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E8EDF4] text-primary-container font-code text-[11px] font-semibold mt-0.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+                <span>Lead Editor</span>
+              </div>
+            </div>
+          </div>
+          <div class="py-1">
+            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('settings')">
+              <span class="material-symbols-outlined text-[18px]">manage_accounts</span>
+              <span>Personal Settings</span>
+            </a>
+            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('team-roles?project=' + encodeURIComponent('{project_name}'))">
+              <span class="material-symbols-outlined text-[18px]">groups</span>
+              <span>Team Workspace</span>
+            </a>
+            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('workspace')">
+              <span class="material-symbols-outlined text-[18px]">grid_view</span>
+              <span>All Projects</span>
+            </a>
+          </div>
+          <div class="pt-1 border-t border-[#E4DFD6]/70">
+            <button onclick="navigateParent('login?logout=1')" class="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#DC2626] hover:bg-[#FEE2E2]/50 transition-colors cursor-pointer" title="Sign out of ACL">
+              <span class="material-symbols-outlined text-[18px]">logout</span>
+              <span>Sign out</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div>
   </header>
 
   <!-- MAIN VIEWPORT CONTENT -->
   <main class="relative pt-16 bg-surface min-h-screen">
+    <!-- Floating Toast Notification -->
+    <div id="toastNotification" class="fixed top-20 right-8 z-50 flex items-center gap-3 px-4 py-3 bg-surface-container-lowest rounded-xl shadow-lg border border-[#E4DFD6] transition-all duration-300 transform translate-y-[-20px] opacity-0 pointer-events-none">
+      <div class="w-7 h-7 rounded-full bg-secondary-container text-secondary flex items-center justify-center shrink-0">
+        <span class="material-symbols-outlined text-[18px]">check_circle</span>
+      </div>
+      <div class="flex flex-col">
+        <span class="font-title-md text-xs font-bold text-on-surface" id="toastMessage">Action completed</span>
+        <span class="font-code text-[11px] text-on-surface-variant">Queue Monitor Status Synchronized</span>
+      </div>
+    </div>
+
     <div class="flex flex-col w-full p-gutter-lg space-y-space-lg max-w-7xl mx-auto">
 
       <!-- View State Tabs: In-Progress Monitor vs Complete Chapter ZIP Export -->
@@ -310,7 +430,7 @@ tailwind.config = {{
               <h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight font-bold">Queue Monitor</h1>
               <div class="flex items-center gap-1.5 bg-primary-fixed text-primary px-space-sm py-0.5 rounded-full">
                 <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-                <span class="font-code-sm text-code-sm font-semibold tracking-normal notranslate" translate="no">Worker Pool: 4 Active Workers • FIFO Priority Engine</span>
+                <span id="worker-pool-badge" class="font-code-sm text-code-sm font-semibold tracking-normal notranslate" translate="no">Worker Pool: 4 Active Workers • FIFO Priority Engine</span>
               </div>
             </div>
             <p class="font-body-md text-body-md text-outline">Real-time task tracking for Python Asynchronous Queue pipeline.</p>
@@ -321,9 +441,9 @@ tailwind.config = {{
               <span class="w-2 h-2 rounded-full bg-secondary mr-2 inline-block animate-ping"></span>
               <span class="font-label-md text-label-md">Auto-refresh: <strong>5s</strong></span>
             </div>
-            <button class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-full border border-outline-variant/60 bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors shadow-sm font-label-md text-label-md cursor-pointer" type="button">
-              <span class="material-symbols-outlined text-[16px] text-on-surface-variant">pause</span>
-              <span>Pause Queue</span>
+            <button id="pause-queue-btn" onclick="togglePauseQueue()" class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-full border border-outline-variant/60 bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors shadow-sm font-label-md text-label-md cursor-pointer" type="button">
+              <span id="pause-icon" class="material-symbols-outlined text-[16px] text-on-surface-variant">pause</span>
+              <span id="pause-label">Pause Queue</span>
             </button>
           </div>
         </div>
@@ -333,7 +453,7 @@ tailwind.config = {{
           <!-- Row 1: Header & Metrics -->
           <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-space-xs mb-space-sm">
             <div class="flex items-center gap-space-sm flex-wrap">
-              <h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">Active Chapter: Shonen Weekly #112</h2>
+              <h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">Active Chapter: <span class="notranslate" translate="no">{project_name}</span></h2>
               <span class="font-code-sm text-code-sm bg-surface-container-high text-on-surface-variant px-space-xs py-0.5 rounded notranslate" translate="no">#CH-112-RAW</span>
             </div>
             <div class="text-left sm:text-right">
@@ -459,14 +579,14 @@ tailwind.config = {{
         <div class="bg-surface-container-lowest rounded-xl border border-outline-variant/50 overflow-hidden shadow-sm">
           <div class="p-space-md border-b border-outline-variant/50 flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm bg-surface-container-lowest">
             <div class="flex items-center gap-space-xs overflow-x-auto pb-1 sm:pb-0">
-              <button class="px-space-sm py-1 rounded-lg text-primary-container bg-primary-fixed/40 font-title-md text-title-md text-xs font-bold whitespace-nowrap cursor-pointer" type="button">All Tasks (24)</button>
-              <button class="px-space-sm py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-label-md text-label-md whitespace-nowrap transition-colors cursor-pointer" type="button">Completed (12)</button>
-              <button class="px-space-sm py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-label-md text-label-md whitespace-nowrap transition-colors cursor-pointer" type="button">In Progress (4)</button>
-              <button class="px-space-sm py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-label-md text-label-md whitespace-nowrap transition-colors cursor-pointer" type="button">Queued (8)</button>
+              <button id="task-filter-all" onclick="filterTaskRows('all')" class="px-space-sm py-1 rounded-lg text-primary-container bg-primary-fixed/40 font-title-md text-title-md text-xs font-bold whitespace-nowrap cursor-pointer transition-all" type="button">All Tasks (24)</button>
+              <button id="task-filter-completed" onclick="filterTaskRows('completed')" class="px-space-sm py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-label-md text-label-md whitespace-nowrap transition-colors cursor-pointer" type="button">Completed (12)</button>
+              <button id="task-filter-inprogress" onclick="filterTaskRows('inprogress')" class="px-space-sm py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-label-md text-label-md whitespace-nowrap transition-colors cursor-pointer" type="button">In Progress (4)</button>
+              <button id="task-filter-queued" onclick="filterTaskRows('queued')" class="px-space-sm py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-label-md text-label-md whitespace-nowrap transition-colors cursor-pointer" type="button">Queued (8)</button>
             </div>
             <div class="relative w-full sm:w-64">
               <span class="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-outline">search</span>
-              <input class="w-full h-8 pl-8 pr-3 text-xs font-body-sm text-on-surface bg-surface-container-lowest border border-outline-variant/60 rounded-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container" placeholder="Filter by page or status..." type="text"/>
+              <input id="task-table-search" oninput="searchTaskRows(this.value)" class="w-full h-8 pl-8 pr-3 text-xs font-body-sm text-on-surface bg-surface-container-lowest border border-outline-variant/60 rounded-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container" placeholder="Filter by page or status..." type="text"/>
             </div>
           </div>
 
@@ -482,7 +602,7 @@ tailwind.config = {{
                 </tr>
               </thead>
               <tbody class="divide-y divide-outline-variant/40 font-body-sm text-body-sm">
-                <tr class="hover:bg-surface-container-low/60 transition-colors">
+                <tr data-status="completed" class="task-row hover:bg-surface-container-low/60 transition-colors">
                   <td class="py-3.5 px-space-md font-title-md font-semibold text-on-surface">Page 001–012 (Batch A)</td>
                   <td class="py-3.5 px-space-md font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">page_001.png → page_012.png</td>
                   <td class="py-3.5 px-space-md text-on-surface font-medium">Typesetting Complete</td>
@@ -494,7 +614,7 @@ tailwind.config = {{
                   </td>
                   <td class="py-3.5 px-space-md text-right font-code-sm text-code-sm text-outline notranslate" translate="no">12:05:30 (4m ago)</td>
                 </tr>
-                <tr class="hover:bg-surface-container-low/60 transition-colors bg-primary-fixed/10">
+                <tr data-status="inprogress" class="task-row hover:bg-surface-container-low/60 transition-colors bg-primary-fixed/10">
                   <td class="py-3.5 px-space-md font-title-md font-semibold text-primary-container">Page 013</td>
                   <td class="py-3.5 px-space-md font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">page_013.png</td>
                   <td class="py-3.5 px-space-md text-on-surface font-medium">Waiting Review (OCR Correction)</td>
@@ -509,7 +629,7 @@ tailwind.config = {{
                   </td>
                   <td class="py-3.5 px-space-md text-right font-code-sm text-code-sm text-primary font-medium notranslate" translate="no">12:08:14 (Just now)</td>
                 </tr>
-                <tr class="hover:bg-surface-container-low/60 transition-colors">
+                <tr data-status="inprogress" class="task-row hover:bg-surface-container-low/60 transition-colors">
                   <td class="py-3.5 px-space-md font-title-md font-semibold text-on-surface">Page 014</td>
                   <td class="py-3.5 px-space-md font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">page_014.png</td>
                   <td class="py-3.5 px-space-md text-on-surface font-medium">LaMa Inpainting (Background Clean)</td>
@@ -524,7 +644,7 @@ tailwind.config = {{
                   </td>
                   <td class="py-3.5 px-space-md text-right font-code-sm text-code-sm text-outline notranslate" translate="no">12:08:52 (In flight)</td>
                 </tr>
-                <tr class="hover:bg-surface-container-low/60 transition-colors">
+                <tr data-status="inprogress" class="task-row hover:bg-surface-container-low/60 transition-colors">
                   <td class="py-3.5 px-space-md font-title-md font-semibold text-on-surface">Page 015</td>
                   <td class="py-3.5 px-space-md font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">page_015.png</td>
                   <td class="py-3.5 px-space-md text-on-surface font-medium">Manga OCR v2.1 Extraction</td>
@@ -536,7 +656,7 @@ tailwind.config = {{
                   </td>
                   <td class="py-3.5 px-space-md text-right font-code-sm text-code-sm text-outline notranslate" translate="no">12:09:01 (In flight)</td>
                 </tr>
-                <tr class="hover:bg-surface-container-low/60 transition-colors">
+                <tr data-status="inprogress" class="task-row hover:bg-surface-container-low/60 transition-colors">
                   <td class="py-3.5 px-space-md font-title-md font-semibold text-on-surface">Page 016</td>
                   <td class="py-3.5 px-space-md font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">page_016.png</td>
                   <td class="py-3.5 px-space-md text-on-surface font-medium">YOLOv8 Speech Bubble Detection</td>
@@ -548,7 +668,7 @@ tailwind.config = {{
                   </td>
                   <td class="py-3.5 px-space-md text-right font-code-sm text-code-sm text-outline notranslate" translate="no">12:09:10 (In flight)</td>
                 </tr>
-                <tr class="hover:bg-surface-container-low/60 transition-colors">
+                <tr data-status="queued" class="task-row hover:bg-surface-container-low/60 transition-colors">
                   <td class="py-3.5 px-space-md font-title-md font-medium text-on-surface-variant">Page 017–024 (8 Pages)</td>
                   <td class="py-3.5 px-space-md font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">page_017.png → page_024.png</td>
                   <td class="py-3.5 px-space-md text-outline font-normal">FIFO Pipeline Ingestion Queue</td>
@@ -620,7 +740,7 @@ tailwind.config = {{
                 <div class="flex items-center gap-3 pt-1 text-on-surface-variant font-code-sm text-code-sm">
                   <span class="inline-flex items-center gap-1 font-medium text-secondary notranslate" translate="no">
                     <span class="material-symbols-outlined text-[14px]">auto_stories</span>
-                    <span>Shonen Weekly #112</span>
+                    <span class="notranslate" translate="no">{project_name}</span>
                   </span>
                   <span>•</span>
                   <span class="notranslate" translate="no">Job #JOB-9823-C</span>
@@ -719,6 +839,149 @@ tailwind.config = {{
 <script>
 // Parent navigation bridge for seamless Streamlit router interaction
 function navigateParent(path) {{
+  const target = '/' + path.replace(/^\//, '');
+  try {{
+    if (window.parent && window.parent.location) {{
+      window.parent.location.href = window.parent.location.origin + target;
+      return;
+    }}
+  }} catch (e) {{
+    console.warn("Cross-origin frame navigation fallback triggered:", e);
+  }}
+  window.location.href = target;
+}}
+
+// Interactive Toast Notification
+function showToast(message) {{
+  const toast = document.getElementById('toastNotification');
+  const msgEl = document.getElementById('toastMessage');
+  if (!toast || !msgEl) return;
+  msgEl.textContent = message;
+  toast.classList.remove('opacity-0', 'translate-y-[-20px]', 'pointer-events-none');
+  toast.classList.add('opacity-100', 'translate-y-0');
+  setTimeout(() => {{
+    toast.classList.remove('opacity-100', 'translate-y-0');
+    toast.classList.add('opacity-0', 'translate-y-[-20px]', 'pointer-events-none');
+  }}, 3200);
+}}
+
+// Interactive Notification Dropdown Toggle
+function toggleNotifDropdown(e) {{
+  e.stopPropagation();
+  const profileDropdown = document.getElementById('profile-dropdown');
+  if (profileDropdown) profileDropdown.classList.add('hidden');
+  const dropdown = document.getElementById('notif-dropdown');
+  if (dropdown) dropdown.classList.toggle('hidden');
+}}
+
+// Interactive Profile Dropdown Toggle
+function toggleProfileDropdown(e) {{
+  e.stopPropagation();
+  const notifDropdown = document.getElementById('notif-dropdown');
+  if (notifDropdown) notifDropdown.classList.add('hidden');
+  const dropdown = document.getElementById('profile-dropdown');
+  if (dropdown) dropdown.classList.toggle('hidden');
+}}
+
+function markAllNotifsRead() {{
+  const badge = document.getElementById('notif-badge');
+  const count = document.getElementById('notif-count');
+  if (badge) badge.classList.add('hidden');
+  if (count) {{
+    count.innerText = '0 New';
+    count.classList.remove('bg-[#FEE2E2]', 'text-[#DC2626]');
+    count.classList.add('bg-surface-container', 'text-on-surface-variant');
+  }}
+  const dots = document.querySelectorAll('.notif-dot');
+  dots.forEach(d => d.classList.add('opacity-0'));
+  showToast("All notifications marked as read");
+}}
+
+document.addEventListener('click', function(e) {{
+  const notifDropdown = document.getElementById('notif-dropdown');
+  const notifBtn = document.getElementById('notif-btn');
+  if (notifDropdown && !notifDropdown.contains(e.target) && notifBtn && !notifBtn.contains(e.target)) {{
+    notifDropdown.classList.add('hidden');
+  }}
+  const profileDropdown = document.getElementById('profile-dropdown');
+  const profileBtn = document.getElementById('profile-btn');
+  if (profileDropdown && !profileDropdown.contains(e.target) && profileBtn && !profileBtn.contains(e.target)) {{
+    profileDropdown.classList.add('hidden');
+  }}
+}});
+
+// Interactive Pause / Resume Queue
+let isPaused = false;
+function togglePauseQueue() {{
+  isPaused = !isPaused;
+  const badge = document.getElementById('worker-pool-badge');
+  const icon = document.getElementById('pause-icon');
+  const label = document.getElementById('pause-label');
+  if (isPaused) {{
+    if (badge) badge.innerText = 'Worker Pool: Paused • Queue Frozen by Operator';
+    if (icon) icon.innerText = 'play_arrow';
+    if (label) label.innerText = 'Resume Queue';
+    showToast('Queue pipeline paused. Workers idle.');
+  }} else {{
+    if (badge) badge.innerText = 'Worker Pool: 4 Active Workers • FIFO Priority Engine';
+    if (icon) icon.innerText = 'pause';
+    if (label) label.innerText = 'Pause Queue';
+    showToast('Queue pipeline resumed. Workers processing.');
+  }}
+}}
+
+// Filter task rows by status (All, Completed, In Progress, Queued)
+let currentFilter = 'all';
+function filterTaskRows(status) {{
+  currentFilter = status;
+  const rows = document.querySelectorAll('.task-row');
+  rows.forEach(r => {{
+    const rStatus = r.getAttribute('data-status');
+    if (status === 'all' || rStatus === status) {{
+      r.style.display = '';
+    }} else {{
+      r.style.display = 'none';
+    }}
+  }});
+
+  // Update button active styles
+  const btnAll = document.getElementById('task-filter-all');
+  const btnComp = document.getElementById('task-filter-completed');
+  const btnInprog = document.getElementById('task-filter-inprogress');
+  const btnQueued = document.getElementById('task-filter-queued');
+
+  const btns = [
+    {{ el: btnAll, active: status === 'all' }},
+    {{ el: btnComp, active: status === 'completed' }},
+    {{ el: btnInprog, active: status === 'inprogress' }},
+    {{ el: btnQueued, active: status === 'queued' }}
+  ];
+
+  btns.forEach(b => {{
+    if (!b.el) return;
+    if (b.active) {{
+      b.el.className = 'px-space-sm py-1 rounded-lg text-primary-container bg-primary-fixed/40 font-title-md text-title-md text-xs font-bold whitespace-nowrap cursor-pointer transition-all';
+    }} else {{
+      b.el.className = 'px-space-sm py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-label-md text-label-md whitespace-nowrap transition-colors cursor-pointer';
+    }}
+  }});
+}}
+
+// Search filter inside task table
+function searchTaskRows(query) {{
+  const term = query.toLowerCase().trim();
+  const rows = document.querySelectorAll('.task-row');
+  rows.forEach(r => {{
+    const matchesFilter = (currentFilter === 'all' || r.getAttribute('data-status') === currentFilter);
+    const text = r.innerText.toLowerCase();
+    if (matchesFilter && (!term || text.includes(term))) {{
+      r.style.display = '';
+    }} else {{
+      r.style.display = 'none';
+    }}
+  }});
+}}
+function navigateParent(path) {{
   const target = '/' + path.replace(/^\\//, '');
   try {{
     if (window.parent && window.parent.location) {{
@@ -758,6 +1021,10 @@ function switchView(viewName) {{
 // Progress simulation
 let simPercent = 68;
 function simulateJobProgress() {{
+  if (isPaused) {{
+    showToast('Queue is currently paused. Click Resume first.');
+    return;
+  }}
   simPercent = Math.min(100, simPercent + 8);
   const bar = document.getElementById('progress-bar-fill');
   const label = document.getElementById('progress-percentage-label');
@@ -765,50 +1032,58 @@ function simulateJobProgress() {{
   if (bar) bar.style.width = simPercent + '%';
   if (label) label.innerText = `${{pages}} / 24 Pages Processed (${{simPercent}}%)`;
 
+  showToast(`Simulated step: ${{pages}}/24 Pages processed (${{simPercent}}%)`);
+
   if (simPercent >= 100) {{
     setTimeout(() => {{
       switchView('completed');
+      showToast('Pipeline execution finished! Chapter release ready for ZIP export.');
     }}, 600);
   }}
 }}
 
 // Download ZIP action
 function downloadZipArchive() {{
-  const blob = new Blob(["ACL Production Chapter Export: Shonen Weekly #112\\nLocalizer: ACL v2.4\\nPages: 24/24\\nLanguage: JA -> VI"], {{ type: 'application/zip' }});
+  const blob = new Blob(["ACL Production Chapter Export: {project_name}\\nLocalizer: ACL v2.4\\nPages: 24/24\\nLanguage: JA -> VI\\nStatus: Verified Complete"], {{ type: 'application/zip' }});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'Shonen_Weekly_112_Vietnamese_Export.zip';
+  a.download = '{file_safe_project}_Vietnamese_Export.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  showToast('Downloaded chapter release ZIP package ({file_safe_project})');
 }}
 
 // Download log action
 function downloadPipelineLog() {{
-  const logContent = `[ACL-PIPELINE-LOG] Session: 2026-10-18T00:10:00Z
-Job: #JOB-9823-C
-Batch: #CH-112-RAW
+  const logContent = `[ACL-PIPELINE-LOG] Project: {project_name}
+Timestamp: 2026-10-20T14:20:00Z
+Job ID: #JOB-9823-C
+Batch ID: #CH-112-RAW
 Total Pages: 24
-Stages:
-- Ingestion: Complete (24/24)
-- YOLOv8 Detection: Complete (24/24)
-- Manga OCR v2.1: Complete (24/24)
-- Human Review: Signed off by Lead Editor
-- LaMa Inpainting: Complete (24/24)
-- Typography & Typesetting: Complete (24/24)
+Pipeline Stages:
+1. Ingestion: Complete (24/24)
+2. YOLOv8 Text Detection: Complete (24/24) - mAP 0.942
+3. Manga OCR v2.1: Complete (24/24) - Zero retries
+4. Human Interactive Review: Signed off by Lead Editor
+5. LaMa GAN Inpainting: Complete (24/24)
+6. Typography & Typesetting: Complete (24/24) - CC Wild Words
+7. Package Bundle: Success
 Exit status: SUCCESS (0 errors)
+Worker: Python AsyncIO Worker #acl-worker-8421
 `;
   const blob = new Blob([logContent], {{ type: 'text/plain' }});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'acl_pipeline_ch112.log';
+  a.download = 'acl_pipeline_{file_safe_project}.log';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  showToast('Exported pipeline execution log');
 }}
 </script>
 
