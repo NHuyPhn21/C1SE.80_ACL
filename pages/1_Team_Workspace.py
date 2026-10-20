@@ -388,7 +388,7 @@ tailwind.config = {{
         </div>
 
         <!-- Card 2: ASSIGNED WORKLOAD -->
-        <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] hover:shadow-md hover:border-primary-container/40 transition-all cursor-pointer flex items-center justify-between group" onclick="navigateParent('chapter-studio')" title="Open Chapter Studio for this workload">
+        <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] hover:shadow-md hover:border-primary-container/40 transition-all cursor-pointer flex items-center justify-between group" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{project_name}'))" title="Open Chapter Studio for this workload">
           <div class="flex-1 pr-4">
             <span class="font-code text-xs uppercase tracking-wider text-on-surface-variant font-semibold block mb-1 group-hover:text-primary-container transition-colors">ASSIGNED WORKLOAD</span>
             <div class="flex items-baseline gap-1.5">
@@ -795,7 +795,7 @@ function downloadAuditLog() {{
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", "ACL_Audit_Log_Shonen_112.csv");
+  link.setAttribute("download", `ACL_Audit_Log_${{encodeURIComponent('{project_name}')}}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
