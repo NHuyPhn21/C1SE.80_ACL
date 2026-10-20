@@ -366,7 +366,7 @@ font {{
 
           <!-- Footer with Avatars + '+2 trans' (Mục 5) & Action Link -->
           <div class="mt-6 pt-4 border-t border-[#E4DFD6]/60 flex items-center justify-between">
-            <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles')" title="Manage team roles & permissions for Shonen Weekly #112">
+            <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles?project=Shonen+Weekly+%23112')" title="Manage team roles & permissions for Shonen Weekly #112">
               <div class="flex items-center -space-x-1.5">
                 <div class="w-7 h-7 rounded-full bg-[#D4E9D7] text-[#1E5A2A] border-2 border-white flex items-center justify-center font-code text-[11px] font-bold" title="Minh Hoang (Typesetter)">MH</div>
                 <div class="w-7 h-7 rounded-full bg-[#E5D9F2] text-[#4D2C7A] border-2 border-white flex items-center justify-center font-code text-[11px] font-bold" title="Tran Ha (Translator)">TH</div>
@@ -377,7 +377,7 @@ font {{
               <span class="material-symbols-outlined text-[15px] text-on-surface-variant ml-1 opacity-70 group-hover/team:opacity-100 group-hover/team:text-primary-container transition-all" title="Team Workspace">groups</span>
             </div>
             
-            <a class="inline-flex items-center gap-1 text-xs font-semibold text-primary-container hover:underline cursor-pointer group" onclick="navigateParent('chapter-studio')">
+            <a class="inline-flex items-center gap-1 text-xs font-semibold text-primary-container hover:underline cursor-pointer group" onclick="navigateParent('chapter-studio?project=Shonen+Weekly+%23112')">
               <span>Open Chapter Studio</span>
               <span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
             </a>
@@ -417,7 +417,7 @@ font {{
 
           <!-- Footer with Avatars & Action Link -->
           <div class="mt-6 pt-4 border-t border-[#E4DFD6]/60 flex items-center justify-between">
-            <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles')" title="Manage team roles & permissions for One Piece — Chapter 1115">
+            <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles?project=One+Piece+-+Chapter+1115')" title="Manage team roles & permissions for One Piece — Chapter 1115">
               <div class="flex items-center -space-x-1.5">
                 <div class="w-7 h-7 rounded-full bg-[#D4E9D7] text-[#1E5A2A] border-2 border-white flex items-center justify-center font-code text-[11px] font-bold" title="Linh Huong">LH</div>
                 <div class="w-7 h-7 rounded-full bg-primary-container text-on-primary border-2 border-white flex items-center justify-center font-code text-[11px] font-bold" title="Phuc Hai">PH</div>
@@ -425,7 +425,7 @@ font {{
               <span class="material-symbols-outlined text-[15px] text-on-surface-variant ml-1.5 opacity-70 group-hover/team:opacity-100 group-hover/team:text-primary-container transition-all" title="Team Workspace">groups</span>
             </div>
             
-            <a class="inline-flex items-center gap-1 text-xs font-semibold text-primary-container hover:underline cursor-pointer group" onclick="navigateParent('queue-monitor')">
+            <a class="inline-flex items-center gap-1 text-xs font-semibold text-primary-container hover:underline cursor-pointer group" onclick="navigateParent('queue-monitor?project=One+Piece+-+Chapter+1115')">
               <span>View Queue</span>
               <span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
             </a>
@@ -465,7 +465,7 @@ font {{
 
           <!-- Footer with Avatars & Download ZIP Link -->
           <div class="mt-6 pt-4 border-t border-[#E4DFD6]/60 flex items-center justify-between">
-            <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles')" title="Manage team roles & permissions for Jujutsu Kaisen — Special">
+            <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles?project=Jujutsu+Kaisen+-+Special')" title="Manage team roles & permissions for Jujutsu Kaisen — Special">
               <div class="flex items-center -space-x-1.5">
                 <div class="w-7 h-7 rounded-full bg-[#D4E9D7] text-[#1E5A2A] border-2 border-white flex items-center justify-center font-code text-[11px] font-bold" title="Minh Hoang">MH</div>
                 <div class="w-7 h-7 rounded-full bg-[#E8F5E9] text-[#2E7D32] border-2 border-white flex items-center justify-center font-code text-[11px] font-bold" title="Linh Huong">LH</div>
@@ -802,11 +802,11 @@ if (form) {{
           </div>
         </div>
         <div class="mt-6 pt-4 border-t border-[#E4DFD6]/60 flex items-center justify-between">
-          <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles')" title="Manage team roles & permissions for ${{title}}">
+          <div class="flex items-center cursor-pointer group/team p-1 -m-1 rounded-lg hover:bg-surface-container-low transition-colors" onclick="navigateParent('team-roles?project=' + encodeURIComponent('${{title}}'))" title="Manage team roles & permissions for ${{title}}">
             <div class="w-7 h-7 rounded-full bg-primary-container text-on-primary border-2 border-white flex items-center justify-center font-code text-[11px] font-bold" title="{user_name}">{user_initials}</div>
             <span class="material-symbols-outlined text-[15px] text-on-surface-variant ml-1.5 opacity-70 group-hover/team:opacity-100 group-hover/team:text-primary-container transition-all" title="Team Workspace">groups</span>
           </div>
-          <a class="inline-flex items-center gap-1 text-xs font-semibold text-primary-container hover:underline cursor-pointer group" onclick="navigateParent('chapter-studio')">
+          <a class="inline-flex items-center gap-1 text-xs font-semibold text-primary-container hover:underline cursor-pointer group" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('${{title}}'))">
             <span>Open Chapter Studio</span>
             <span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
           </a>

@@ -17,6 +17,7 @@ user = require_auth()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 user_name = user.full_name or "Phan Van Quan"
+project_name = st.query_params.get("project", "Shonen Weekly #112")
 
 team_workspace_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -190,7 +191,7 @@ tailwind.config = {{
       <span class="text-outline-variant font-light text-sm">/</span>
       <a class="text-sm text-on-surface-variant font-medium hover:text-on-surface transition-colors cursor-pointer" onclick="navigateParent('workspace')">Projects</a>
       <span class="text-outline-variant font-light text-sm">/</span>
-      <a class="text-sm text-on-surface-variant font-medium hover:text-primary-container transition-colors cursor-pointer notranslate" translate="no" onclick="navigateParent('chapter-studio')" title="Open Chapter Studio for Shonen Weekly #112">Shonen Weekly #112</a>
+      <a class="text-sm text-on-surface-variant font-medium hover:text-primary-container transition-colors cursor-pointer notranslate" translate="no" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{project_name}'))" title="Open Chapter Studio for {project_name}">{project_name}</a>
       <span class="text-outline-variant font-light text-sm">/</span>
       <span class="text-sm text-primary-container font-semibold">Team Workspace</span>
     </div>
@@ -329,7 +330,7 @@ tailwind.config = {{
         </div>
         <div class="flex flex-col">
           <span class="font-title-md text-body-sm text-on-surface" id="toastMessage">Invitation dispatched successfully</span>
-          <span class="font-code-sm text-code-sm text-on-surface-variant">Access permissions provisioned for Shonen Weekly #112</span>
+          <span class="font-code-sm text-code-sm text-on-surface-variant">Access permissions provisioned for {project_name}</span>
         </div>
       </div>
 
@@ -340,7 +341,7 @@ tailwind.config = {{
             <span class="material-symbols-outlined text-[16px]">arrow_back</span>
             <span>Back to Projects</span>
           </a>
-          <a class="inline-flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors py-1.5 px-3.5 rounded-full bg-surface-container-low cursor-pointer border border-[#E4DFD6]" onclick="navigateParent('chapter-studio')" title="Proceed to Chapter Studio for this series">
+          <a class="inline-flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors py-1.5 px-3.5 rounded-full bg-surface-container-low cursor-pointer border border-[#E4DFD6]" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{project_name}'))" title="Proceed to Chapter Studio for this series">
             <span>Open Chapter Studio</span>
             <span class="material-symbols-outlined text-[15px]">arrow_forward</span>
           </a>
@@ -356,7 +357,7 @@ tailwind.config = {{
         <div>
           <h1 class="font-headline text-3xl font-bold text-on-surface tracking-tight">Team Workspace &amp; Roles</h1>
           <p class="text-sm text-on-surface-variant mt-1 font-normal">
-            Assign roles and permissions for project: <span class="text-on-surface font-semibold notranslate" translate="no">Shonen Weekly #112</span>
+            Assign roles and permissions for project: <span class="text-on-surface font-semibold notranslate" translate="no">{project_name}</span>
           </p>
         </div>
         <button class="inline-flex items-center gap-2 h-11 px-6 rounded-full bg-primary text-on-primary text-sm font-semibold hover:bg-primary-container transition-all shadow-sm active:scale-95 cursor-pointer self-start sm:self-auto" onclick="document.getElementById('inviteInput').focus()">
@@ -387,7 +388,7 @@ tailwind.config = {{
         </div>
 
         <!-- Card 2: ASSIGNED WORKLOAD -->
-        <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] hover:shadow-md hover:border-primary-container/40 transition-all cursor-pointer flex items-center justify-between group" onclick="navigateParent('chapter-studio')" title="Open Chapter Studio for this workload">
+        <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] hover:shadow-md hover:border-primary-container/40 transition-all cursor-pointer flex items-center justify-between group" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{project_name}'))" title="Open Chapter Studio for this workload">
           <div class="flex-1 pr-4">
             <span class="font-code text-xs uppercase tracking-wider text-on-surface-variant font-semibold block mb-1 group-hover:text-primary-container transition-colors">ASSIGNED WORKLOAD</span>
             <div class="flex items-baseline gap-1.5">
@@ -794,7 +795,7 @@ function downloadAuditLog() {{
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", "ACL_Audit_Log_Shonen_112.csv");
+  link.setAttribute("download", `ACL_Audit_Log_${{encodeURIComponent('{project_name}')}}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
