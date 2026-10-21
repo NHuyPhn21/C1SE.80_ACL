@@ -104,3 +104,4 @@ manga-ocr
 google-generativeai
 openai
 python-dotenv
+transformers==4.41.2
