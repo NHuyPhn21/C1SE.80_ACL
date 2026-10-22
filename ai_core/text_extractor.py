@@ -54,13 +54,23 @@ def extract_manga_text(image_path, yolo_weight_path):
     return extracted_data
 
 if __name__ == "__main__":
-    # Đổi đường dẫn này thành ảnh bất kỳ trong tập data/raw_images của bạn để test thử
-    TEST_IMAGE_PATH = r"E:\DatabaseFiles\CAPSTONE1_ACL\C1SE.80_ACL\data\raw_images\AisazuNihaIrarenai\045.jpg"
+    from backend.database import SessionLocal
+    from backend.crud import save_extracted_data
     
-    # Đường dẫn tới file trọng số bạn vừa train thành công hôm qua
+    # Dùng chuỗi thô (r) và đường dẫn tuyệt đối như đã chốt
+    TEST_IMAGE_PATH = r"E:\DatabaseFiles\CAPSTONE1_ACL\C1SE.80_ACL\data\raw_images\AisazuNihaIrarenai\045.jpg"
     YOLO_WEIGHT_PATH = "models/yolo/manga_v14/weights/best.pt"
     
-    # Chạy thử luồng
+    # 1. Chạy AI trích xuất
     results = extract_manga_text(TEST_IMAGE_PATH, YOLO_WEIGHT_PATH)
     
-    print("\n✅ HOÀN TẤT TRÍCH XUẤT! Tổng số bóng thoại tìm thấy:", len(results))
+    # 2. Đẩy vào SQLite
+    if results:
+        db = SessionLocal()
+        try:
+            saved_page = save_extracted_data(db, TEST_IMAGE_PATH, results)
+            print(f"\n✅ ĐÃ LƯU THÀNH CÔNG: {len(results)} bóng thoại vào Database (Page ID: {saved_page.id})")
+        except Exception as e:
+            print(f"❌ Lỗi khi lưu Database: {e}")
+        finally:
+            db.close()

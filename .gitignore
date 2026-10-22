@@ -17,3 +17,4 @@ __pycache__/
 backups/
 *_backup.py
 *.sqlite3
+.env
