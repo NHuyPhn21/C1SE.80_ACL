@@ -1,23 +1,67 @@
-"""ACL Chapter Studio — Batch Image Upload & AI Pipeline Setup — Screen ACL-06.
+"""ACL Chapter Studio — Batch Image Upload & AI Pipeline Setup — Screen ACL-06 (Live Backend Connected)."""
 
-Pixel-perfect implementation of Google Stitch Project 'UX/UI_ACL' (ID: 15081338219515375601).
-Screen: ACL-06: Chapter Studio — Batch Image Upload & AI Pipeline Setup.
-Includes full Vietnamese Unicode font support with fallback metrics to ensure Google Translate never breaks fonts.
-100% English UI Labels.
-"""
-
+import os
+from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 
 from utils.auth_session import require_auth
-
+from backend.image_utils import BASE_DIR
 
 # Enforce authentication guard
 user = require_auth()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
-user_name = user.full_name or "Phan Van Quan"
+user_name = user.full_name or "Phan Nhat Huy"
 project_name = st.query_params.get("project", "Shonen Weekly #112")
+
+# Quét các file ảnh thật trong thư mục dự án để hiển thị sẵn trên bảng Staging
+raw_manga_dir = BASE_DIR / "data" / "raw_images" / "AisazuNihaIrarenai"
+uploads_dir = BASE_DIR / "data" / "raw_images" / "uploads"
+uploads_dir.mkdir(parents=True, exist_ok=True)
+
+available_files = []
+if raw_manga_dir.exists():
+    for f in sorted(raw_manga_dir.iterdir()):
+        if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+            size_mb = round(f.stat().st_size / (1024 * 1024), 2)
+            available_files.append({"name": f.name, "size": f"{size_mb} MB", "folder": "AisazuNihaIrarenai"})
+
+# Lấy mặc định 2 trang mẫu (ví dụ 045.jpg, 046.jpg) để staging ban đầu hoặc toàn bộ nếu ít hơn
+default_staged = [f for f in available_files if f["name"] in {"045.jpg", "046.jpg"}]
+if not default_staged and available_files:
+    default_staged = available_files[:3]
+
+initial_rows_html = ""
+initial_filenames = []
+for idx, item in enumerate(default_staged, start=1):
+    fname = item["name"]
+    fsize = item["size"]
+    initial_filenames.append(fname)
+    initial_rows_html += f"""
+          <div class="flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors staged-file-row" data-filename="{fname}" id="row-file-{idx}">
+            <div class="flex items-center gap-space-md min-w-0">
+              <div class="w-10 h-10 rounded-lg bg-primary-container text-on-primary flex items-center justify-center shrink-0 shadow-sm">
+                <span class="material-symbols-outlined text-[22px]">image</span>
+              </div>
+              <div class="flex flex-col min-w-0">
+                <span class="font-title-md text-body-md font-semibold text-on-surface truncate notranslate" translate="no">{fname}</span>
+                <span class="font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">{fsize} • Raw Manga Scan (Ready)</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-space-lg shrink-0">
+              <span class="bg-secondary-container text-on-secondary-container font-code-sm text-code-sm font-semibold px-space-sm py-space-xs rounded-full flex items-center gap-space-xs">
+                <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                <span>Ready for pipeline</span>
+              </span>
+              <button aria-label="Remove {fname}" onclick="removeFileRow('row-file-{idx}')" class="text-on-surface-variant hover:text-error transition-colors p-space-xs rounded-full hover:bg-surface-container-high cursor-pointer" type="button">
+                <span class="material-symbols-outlined text-[20px]">delete</span>
+              </button>
+            </div>
+          </div>
+    """
+
+initial_count = len(initial_filenames)
 
 chapter_studio_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -27,7 +71,6 @@ chapter_studio_html = f"""<!DOCTYPE html>
 <meta content="web_dashboard" name="shell-type"/>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<!-- Comprehensive Google Fonts import with explicit Vietnamese & Latin-Ext subsets to prevent font breakage during browser translation -->
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Sora:wght@600;700;800&subset=vietnamese,latin,latin-ext&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
 
@@ -47,8 +90,6 @@ chapter_studio_html = f"""<!DOCTYPE html>
   main > :last-child {{ margin-bottom: 0 !important; }}
 }}
 
-/* Google Translate DOM Injection Compatibility Fixes:
-   Ensure all translated elements inherit full font family, line-height, and baseline alignment */
 font {{
   font-family: inherit !important;
   font-size: inherit !important;
@@ -59,7 +100,6 @@ font {{
   display: inline !important;
 }}
 
-/* Hide native scrollbar while retaining scroll capability */
 ::-webkit-scrollbar {{ display: none; }}
 
 .material-symbols-outlined {{
@@ -195,13 +235,11 @@ tailwind.config = {{
 <!-- FIXED LEFT SIDEBAR -->
 <aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest border-r border-surface-variant z-50 flex flex-col justify-between select-none">
   <div class="flex flex-col">
-    <!-- Brand Header -->
     <div class="p-space-lg border-b border-surface-variant">
       <div class="font-headline-md text-headline-md text-primary-container tracking-tight leading-none notranslate" translate="no">ACL</div>
       <p class="font-code-sm text-code-sm text-outline mt-space-xs tracking-tight">Automated Comic Localization</p>
     </div>
 
-    <!-- Navigation Stack -->
     <nav class="flex flex-col gap-space-xs p-space-sm mt-space-xs">
       <a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer" onclick="navigateParent('workspace')">
         <span class="material-symbols-outlined text-[20px]">grid_view</span>
@@ -254,12 +292,6 @@ tailwind.config = {{
       <span class="font-label-md text-label-md text-on-surface-variant font-medium">Workspace Canvas</span>
     </div>
     <div class="flex items-center gap-space-md">
-      <button aria-label="Notifications" class="flex items-center justify-center w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button">
-        <span class="material-symbols-outlined text-[20px]">notifications</span>
-      </button>
-      <button aria-label="Help &amp; Docs" class="flex items-center justify-center w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button">
-        <span class="material-symbols-outlined text-[20px]">help</span>
-      </button>
       <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary font-headline-sm text-body-sm font-semibold select-none shadow-sm notranslate" translate="no">{user_initials}</div>
       <button onclick="navigateParent('login?logout=1')" class="text-on-surface-variant hover:text-primary-container text-xs font-semibold px-2 py-1 rounded border border-[#E4DFD6] hover:bg-surface-variant transition-colors" title="Sign out">
         Sign out
@@ -282,21 +314,16 @@ tailwind.config = {{
           <span class="text-on-surface-variant notranslate" translate="no">{project_name}</span>
           <span class="text-outline-variant font-code-sm">/</span>
           <span class="font-title-md text-primary font-semibold">Chapter Studio</span>
-          <a class="text-xs font-semibold px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('team-roles?project=' + encodeURIComponent('{project_name}'))" title="View assigned team roles for {project_name}">
-            <span class="material-symbols-outlined text-[14px]">groups</span>
-            <span>Team Roles</span>
-          </a>
-          <a class="text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary-container/40 text-on-secondary-container hover:bg-secondary-container transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('review-studio?project=' + encodeURIComponent('{project_name}'))" title="Jump to Review Studio">
+          <a class="text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary-container/40 text-on-secondary-container hover:bg-secondary-container transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('review-studio?project=' + encodeURIComponent('{project_name}'))">
             <span>Review Studio</span>
             <span class="material-symbols-outlined text-[13px]">arrow_forward</span>
           </a>
         </div>
 
-        <!-- Active Pipeline Session Indicator Tag -->
         <div class="flex items-center gap-space-sm">
           <span class="bg-surface-container px-space-md py-space-xs rounded-full font-code-sm text-code-sm text-outline flex items-center gap-space-xs">
             <span class="w-2 h-2 rounded-full bg-secondary"></span>
-            <span class="notranslate" translate="no">STAGE: RAW_INGESTION</span>
+            <span class="notranslate" translate="no">STAGE: LIVE_INGESTION</span>
           </span>
           <span class="bg-surface-container-high text-on-surface-variant px-space-md py-space-xs rounded-full font-code-sm text-code-sm notranslate" translate="no">
             BATCH #CH-112-RAW
@@ -316,21 +343,16 @@ tailwind.config = {{
       <!-- Batch Upload Drag-and-Drop Dropzone -->
       <div class="w-full relative group" id="drop-zone" onclick="document.getElementById('batch-file-input').click()">
         <div class="bg-surface-container-lowest rounded-xl p-space-xl text-center shadow-sm transition-all duration-200 cursor-pointer flex flex-col items-center justify-center min-h-[260px] relative overflow-hidden bg-gradient-to-b from-surface-container-lowest to-surface-container-low/40">
-          <!-- Tactile dashed border effect achieved with styled SVG wrapper -->
           <div class="absolute inset-2 rounded-lg pointer-events-none stroke-primary-container/40 group-hover:stroke-primary-container transition-colors">
             <svg class="w-full h-full" xmlns="http://www.w3.org/2000/svg">
               <rect class="text-primary-container/30 group-hover:text-primary-container transition-colors" fill="none" height="100%" rx="8" stroke="currentColor" stroke-dasharray="8 8" stroke-width="2" width="100%"></rect>
             </svg>
           </div>
-          <!-- Center Upload Icon -->
           <div class="w-16 h-16 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container mb-space-sm group-hover:scale-105 transition-transform shadow-sm">
             <span class="material-symbols-outlined text-[36px]">cloud_upload</span>
           </div>
-          <!-- Primary Headline -->
           <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mt-space-xs">Drag &amp; drop comic pages here</h2>
-          <!-- Subtext -->
-          <p class="font-body-md text-body-md text-on-surface-variant mt-space-xs max-w-md">Accepts JPG, PNG batches up to 50 pages • 100MB max per chapter</p>
-          <!-- Secondary Browse Button -->
+          <p class="font-body-md text-body-md text-on-surface-variant mt-space-xs max-w-md">Accepts JPG, PNG batches up to 50 pages • Connected to AisazuNihaIrarenai Dataset</p>
           <div class="mt-space-lg flex items-center gap-space-sm">
             <button class="bg-surface-container-lowest text-primary-container font-title-md text-body-md font-semibold px-space-lg py-2.5 rounded-full inline-flex items-center gap-space-xs shadow-sm hover:bg-surface-container transition-colors border border-primary-container/20" type="button">
               <span class="material-symbols-outlined text-[20px]">folder_open</span>
@@ -342,10 +364,9 @@ tailwind.config = {{
 
       <!-- Uploaded Batch Files Staging Table -->
       <div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm mt-space-lg">
-        <!-- Table Header Row -->
         <div class="flex items-center justify-between pb-space-md mb-space-sm border-b border-[#E4DFD6]">
           <div class="flex items-center gap-space-sm">
-            <h3 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="staging-title">Uploaded Pages (24 files ready)</h3>
+            <h3 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="staging-title">Uploaded Pages ({initial_count} files ready)</h3>
             <span class="bg-secondary-container text-on-secondary-container font-code-sm text-code-sm px-space-sm py-space-xs rounded-full font-medium">Batch Verified</span>
           </div>
           <button onclick="clearAllFiles()" class="font-label-md text-body-sm font-semibold text-error hover:opacity-80 transition-opacity flex items-center gap-space-xs cursor-pointer" type="button">
@@ -356,96 +377,12 @@ tailwind.config = {{
 
         <!-- Staging Rows List -->
         <div class="flex flex-col gap-space-xs" id="staging-list">
-          <!-- Row 1 -->
-          <div class="flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors" id="row-file-1">
-            <div class="flex items-center gap-space-md min-w-0">
-              <div class="w-10 h-10 rounded-lg bg-primary-container text-on-primary flex items-center justify-center shrink-0 shadow-sm">
-                <span class="material-symbols-outlined text-[22px]">image</span>
-              </div>
-              <div class="flex flex-col min-w-0">
-                <span class="font-title-md text-body-md font-semibold text-on-surface truncate notranslate" translate="no">page_001.png</span>
-                <span class="font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">2.4 MB • 1600 × 2560 px</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-space-lg shrink-0">
-              <span class="bg-secondary-container text-on-secondary-container font-code-sm text-code-sm font-semibold px-space-sm py-space-xs rounded-full flex items-center gap-space-xs">
-                <span class="material-symbols-outlined text-[14px]">check_circle</span>
-                <span>Ready for detection</span>
-              </span>
-              <button aria-label="Remove page_001.png" onclick="removeFileRow('row-file-1')" class="text-on-surface-variant hover:text-error transition-colors p-space-xs rounded-full hover:bg-surface-container-high cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[20px]">delete</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Row 2 -->
-          <div class="flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors" id="row-file-2">
-            <div class="flex items-center gap-space-md min-w-0">
-              <div class="w-10 h-10 rounded-lg bg-primary-container text-on-primary flex items-center justify-center shrink-0 shadow-sm">
-                <span class="material-symbols-outlined text-[22px]">image</span>
-              </div>
-              <div class="flex flex-col min-w-0">
-                <span class="font-title-md text-body-md font-semibold text-on-surface truncate notranslate" translate="no">page_002.png</span>
-                <span class="font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">2.1 MB • 1600 × 2560 px</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-space-lg shrink-0">
-              <span class="bg-secondary-container text-on-secondary-container font-code-sm text-code-sm font-semibold px-space-sm py-space-xs rounded-full flex items-center gap-space-xs">
-                <span class="material-symbols-outlined text-[14px]">check_circle</span>
-                <span>Ready for detection</span>
-              </span>
-              <button aria-label="Remove page_002.png" onclick="removeFileRow('row-file-2')" class="text-on-surface-variant hover:text-error transition-colors p-space-xs rounded-full hover:bg-surface-container-high cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[20px]">delete</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Row 3 -->
-          <div class="flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors" id="row-file-3">
-            <div class="flex items-center gap-space-md min-w-0">
-              <div class="w-10 h-10 rounded-lg bg-primary-container text-on-primary flex items-center justify-center shrink-0 shadow-sm">
-                <span class="material-symbols-outlined text-[22px]">image</span>
-              </div>
-              <div class="flex flex-col min-w-0">
-                <span class="font-title-md text-body-md font-semibold text-on-surface truncate notranslate" translate="no">page_003.png</span>
-                <span class="font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">2.8 MB • 1600 × 2560 px</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-space-lg shrink-0">
-              <span class="bg-secondary-container text-on-secondary-container font-code-sm text-code-sm font-semibold px-space-sm py-space-xs rounded-full flex items-center gap-space-xs">
-                <span class="material-symbols-outlined text-[14px]">check_circle</span>
-                <span>Ready for detection</span>
-              </span>
-              <button aria-label="Remove page_003.png" onclick="removeFileRow('row-file-3')" class="text-on-surface-variant hover:text-error transition-colors p-space-xs rounded-full hover:bg-surface-container-high cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[20px]">delete</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Truncated Counter Banner / Footer Row -->
-        <div class="mt-space-md pt-space-sm flex items-center justify-between bg-surface-container px-space-md py-space-sm rounded-lg">
-          <div class="flex items-center gap-space-md">
-            <!-- Visual Thumbnails Stack -->
-            <div class="flex -space-x-2 overflow-hidden items-center">
-              <div class="inline-block h-7 w-6 rounded bg-surface-container-high text-[10px] flex items-center justify-center font-code-sm text-on-surface-variant shadow-sm notranslate" translate="no">04</div>
-              <div class="inline-block h-7 w-6 rounded bg-surface-container-high text-[10px] flex items-center justify-center font-code-sm text-on-surface-variant shadow-sm notranslate" translate="no">05</div>
-              <div class="inline-block h-7 w-6 rounded bg-surface-container-high text-[10px] flex items-center justify-center font-code-sm text-on-surface-variant shadow-sm notranslate" translate="no">06</div>
-              <div class="inline-block h-7 w-6 rounded bg-primary-container text-on-primary text-[10px] flex items-center justify-center font-code-sm shadow-sm notranslate" translate="no">+18</div>
-            </div>
-            <span class="font-body-md text-body-sm font-medium text-on-surface-variant" id="staged-caption">+ 21 more pages staged in chapter batch</span>
-          </div>
-          <button class="font-title-md text-body-sm text-primary hover:text-primary-container font-semibold flex items-center gap-space-xs cursor-pointer" type="button">
-            <span>View all files</span>
-            <span class="material-symbols-outlined text-[16px]">expand_more</span>
-          </button>
+          {initial_rows_html}
         </div>
       </div>
 
       <!-- Language Configuration & AI Model Selector Row -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-space-lg mt-space-lg">
-
-        <!-- Card Left: Source Language & OCR Engine -->
         <div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col justify-between border border-[#E4DFD6]">
           <div>
             <label class="font-title-md text-body-md font-semibold text-on-surface mb-space-xs block">Source Language</label>
@@ -453,18 +390,15 @@ tailwind.config = {{
               <select id="source-lang-select" class="w-full bg-surface-container-low rounded-lg p-space-sm font-title-md text-body-md font-semibold text-on-surface border border-transparent hover:border-[#E4DFD6] focus:outline-none focus:ring-2 focus:ring-primary-container transition-all cursor-pointer">
                 <option value="ja" selected>Japanese (Raw Manga)</option>
                 <option value="en">English (Original Comic)</option>
-                <option value="ko">Korean (Raw Manhwa)</option>
-                <option value="zh">Chinese (Manhua)</option>
               </select>
             </div>
           </div>
           <div class="mt-space-md pt-space-sm bg-surface-container-low p-space-sm rounded-lg flex items-center gap-space-xs text-on-surface-variant">
             <span class="material-symbols-outlined text-primary text-[18px]">document_scanner</span>
-            <span class="font-code-sm text-code-sm"><span class="font-semibold text-on-surface notranslate" translate="no">Manga OCR v2.1 Engine</span> Active • Vertical &amp; CJK text detection tuned</span>
+            <span class="font-code-sm text-code-sm"><span class="font-semibold text-on-surface notranslate" translate="no">YOLOv8 + Manga OCR v2.1</span> Active • IoU Collision Filter Enabled</span>
           </div>
         </div>
 
-        <!-- Card Right: Target Language & Localization Engine -->
         <div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col justify-between border border-[#E4DFD6]">
           <div>
             <label class="font-title-md text-body-md font-semibold text-on-surface mb-space-xs block">Target Language</label>
@@ -472,17 +406,14 @@ tailwind.config = {{
               <select id="target-lang-select" class="w-full bg-surface-container-low rounded-lg p-space-sm font-title-md text-body-md font-semibold text-on-surface border border-transparent hover:border-[#E4DFD6] focus:outline-none focus:ring-2 focus:ring-primary-container transition-all cursor-pointer">
                 <option value="vi" selected>Vietnamese</option>
                 <option value="en">English</option>
-                <option value="fr">French</option>
-                <option value="es">Spanish</option>
               </select>
             </div>
           </div>
           <div class="mt-space-md pt-space-sm bg-surface-container-low p-space-sm rounded-lg flex items-center gap-space-xs text-on-surface-variant">
             <span class="material-symbols-outlined text-primary text-[18px]">psychology</span>
-            <span class="font-code-sm text-code-sm"><span class="font-semibold text-on-surface notranslate" translate="no">Gemini 1.5 Pro Translator</span> • Contextual localization &amp; honorifics enabled</span>
+            <span class="font-code-sm text-code-sm"><span class="font-semibold text-on-surface notranslate" translate="no">Gemini 3.8 Flash Batch Translator</span> • 1-Request JSON Mode</span>
           </div>
         </div>
-
       </div>
 
       <!-- Pipeline Launch Action Card -->
@@ -490,9 +421,8 @@ tailwind.config = {{
         <div class="flex flex-col">
           <div class="flex items-center gap-space-sm">
             <span class="material-symbols-outlined text-primary-container text-[24px]">rocket_launch</span>
-            <h3 class="font-headline-sm text-headline-sm font-bold text-primary-container">Ready to process 24 pages in Asynchronous Queue</h3>
+            <h3 class="font-headline-sm text-headline-sm font-bold text-primary-container" id="launch-banner-title">Ready to process {initial_count} pages in Asynchronous Queue</h3>
           </div>
-          <!-- Visual Step Chain Progress Visualization -->
           <div class="mt-space-sm flex flex-wrap items-center gap-space-xs font-code-sm text-code-sm text-primary-container/90">
             <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium">Queue</span>
             <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
@@ -500,15 +430,14 @@ tailwind.config = {{
             <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
             <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium notranslate" translate="no">Manga OCR</span>
             <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-            <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium">Waiting Review</span>
+            <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium">Review Studio</span>
             <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-            <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium notranslate" translate="no">LaMa Inpainting</span>
+            <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium notranslate" translate="no">Fast Inpainting</span>
             <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-            <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium">Typesetting</span>
+            <span class="bg-surface-container-lowest/80 px-space-xs py-0.5 rounded font-medium">Auto-Typesetting</span>
           </div>
         </div>
 
-        <!-- Right Primary CTA -->
         <div class="shrink-0 flex items-center">
           <button class="bg-primary-container hover:bg-primary text-on-primary font-title-md text-title-md font-semibold h-12 px-space-xl rounded-full shadow-md flex items-center gap-space-sm transition-transform active:scale-95 cursor-pointer pulse-glow" id="start-pipeline-btn" type="button">
             <span>Start AI Pipeline</span>
@@ -517,85 +446,56 @@ tailwind.config = {{
         </div>
       </div>
 
-      <!-- Technical Spec & Queue Status Ribbon -->
-      <div class="mt-space-lg flex flex-col md:flex-row items-center justify-between text-on-surface-variant font-code-sm text-code-sm px-space-xs">
-        <div class="flex items-center gap-space-md">
-          <span class="flex items-center gap-space-xs">
-            <span class="material-symbols-outlined text-[16px]">memory</span>
-            <span class="notranslate" translate="no">GPU Cluster: 4× NVIDIA RTX 4090 Online</span>
-          </span>
-          <span>•</span>
-          <span class="flex items-center gap-space-xs">
-            <span class="material-symbols-outlined text-[16px]">speed</span>
-            <span>Estimated Ingestion: ~42 seconds</span>
-          </span>
-        </div>
-        <div class="mt-space-xs md:mt-0">
-          <span class="text-outline notranslate" translate="no">Pipeline Engine: v2.4-stable • Storage: Local Encrypted Scratchpad</span>
-        </div>
-      </div>
-
     </div>
   </main>
 </div>
 
 <script>
-// Parent navigation bridge for seamless Streamlit router interaction
 function navigateParent(path) {{
-  const target = '/' + path.replace(/^\\//, '');
-  try {{
-    if (window.parent && window.parent.location) {{
-      window.parent.location.href = window.parent.location.origin + target;
-      return;
-    }}
-  }} catch (e) {{
-    console.warn("Cross-origin frame navigation fallback triggered:", e);
-  }}
-  window.location.href = target;
+  const targetUrl = window.location.origin + '/' + path.replace(/^\/+/, '');
+  const a = document.createElement('a');
+  a.href = targetUrl;
+  a.target = '_top';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }}
 
-// Remove single staged file row
 function removeFileRow(rowId) {{
   const row = document.getElementById(rowId);
   if (row) {{
-    row.style.opacity = '0';
-    row.style.transform = 'translateX(20px)';
-    row.style.transition = 'all 0.25s ease';
-    setTimeout(() => {{
-      row.remove();
-      updateStagedCount();
-    }}, 250);
+    row.remove();
+    updateStagedCount();
   }}
 }}
 
-// Clear all staged files
 function clearAllFiles() {{
   const list = document.getElementById('staging-list');
   if (list) {{
-    list.innerHTML = `
-      <div class="p-6 text-center text-on-surface-variant bg-surface-container-low rounded-lg border border-dashed border-[#E4DFD6]">
-        <span class="material-symbols-outlined text-[32px] text-outline mb-1">inventory_2</span>
-        <p class="font-title-md text-body-md font-semibold">No pages staged yet</p>
-        <p class="font-body-sm text-body-sm text-outline">Drop comic pages above to begin pipeline configuration</p>
-      </div>
-    `;
-    const title = document.getElementById('staging-title');
-    if (title) title.innerText = 'Uploaded Pages (0 files ready)';
-    const caption = document.getElementById('staged-caption');
-    if (caption) caption.innerText = '0 pages staged in chapter batch';
+    list.innerHTML = '';
+    updateStagedCount();
   }}
 }}
 
 function updateStagedCount() {{
-  const rows = document.querySelectorAll('#staging-list > div[id^="row-file"]');
+  const rows = document.querySelectorAll('#staging-list > .staged-file-row');
   const count = rows.length;
   const title = document.getElementById('staging-title');
-  if (title) {{
-    title.innerText = `Uploaded Pages (${{count + 21}} files ready)`;
-  }}
+  const launchTitle = document.getElementById('launch-banner-title');
+  if (title) title.innerText = `Uploaded Pages (${{count}} files ready)`;
+  if (launchTitle) launchTitle.innerText = `Ready to process ${{count}} pages in Asynchronous Queue`;
 }}
 
-// Drag & drop file staging handler
+function getStagedFilenames() {{
+  const rows = document.querySelectorAll('#staging-list > .staged-file-row');
+  const names = [];
+  rows.forEach(r => {{
+    const fname = r.getAttribute('data-filename');
+    if (fname) names.push(fname);
+  }});
+  return names;
+}}
+
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('batch-file-input');
 
@@ -607,7 +507,6 @@ if (dropZone) {{
       dropZone.classList.add('scale-[1.01]');
     }}, false);
   }});
-
   ['dragleave', 'drop'].forEach(eventName => {{
     dropZone.addEventListener(eventName, (e) => {{
       e.preventDefault();
@@ -615,11 +514,8 @@ if (dropZone) {{
       dropZone.classList.remove('scale-[1.01]');
     }}, false);
   }});
-
   dropZone.addEventListener('drop', (e) => {{
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    handleNewFiles(files);
+    handleNewFiles(e.dataTransfer.files);
   }}, false);
 }}
 
@@ -632,13 +528,16 @@ if (fileInput) {{
 function handleNewFiles(files) {{
   if (!files || files.length === 0) return;
   const list = document.getElementById('staging-list');
+  // Khi chọn file mới từ máy tính, xóa danh sách mặc định để chỉ chạy đúng các file người dùng vừa chọn
+  list.innerHTML = '';
   for (let i = 0; i < files.length; i++) {{
     const file = files[i];
     const fileId = 'row-file-custom-' + Date.now() + '-' + i;
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
     const row = document.createElement('div');
     row.id = fileId;
-    row.className = "flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors";
+    row.setAttribute('data-filename', file.name);
+    row.className = "flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors staged-file-row";
     row.innerHTML = `
       <div class="flex items-center gap-space-md min-w-0">
         <div class="w-10 h-10 rounded-lg bg-primary-container text-on-primary flex items-center justify-center shrink-0 shadow-sm">
@@ -646,40 +545,41 @@ function handleNewFiles(files) {{
         </div>
         <div class="flex flex-col min-w-0">
           <span class="font-title-md text-body-md font-semibold text-on-surface truncate notranslate" translate="no">${{file.name}}</span>
-          <span class="font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">${{sizeMb}} MB • Raw Upload</span>
+          <span class="font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">${{sizeMb}} MB • Selected from Computer</span>
         </div>
       </div>
       <div class="flex items-center gap-space-lg shrink-0">
         <span class="bg-secondary-container text-on-secondary-container font-code-sm text-code-sm font-semibold px-space-sm py-space-xs rounded-full flex items-center gap-space-xs">
           <span class="material-symbols-outlined text-[14px]">check_circle</span>
-          <span>Ready for detection</span>
+          <span>Ready for pipeline</span>
         </span>
-        <button aria-label="Remove ${{file.name}}" onclick="removeFileRow('${{fileId}}')" class="text-on-surface-variant hover:text-error transition-colors p-space-xs rounded-full hover:bg-surface-container-high cursor-pointer" type="button">
+        <button onclick="removeFileRow('${{fileId}}')" class="text-on-surface-variant hover:text-error transition-colors p-space-xs rounded-full hover:bg-surface-container-high cursor-pointer" type="button">
           <span class="material-symbols-outlined text-[20px]">delete</span>
         </button>
       </div>
     `;
-    list.prepend(row);
+    list.appendChild(row);
   }}
+  updateStagedCount();
 }}
 
-// Pipeline launch trigger
 const startBtn = document.getElementById('start-pipeline-btn');
 if (startBtn) {{
   startBtn.addEventListener('click', function() {{
+    const files = getStagedFilenames();
+    if (files.length === 0) {{
+      alert('Please select at least 1 comic page before starting the AI pipeline!');
+      return;
+    }}
     const btn = this;
     btn.disabled = true;
-    btn.innerHTML = `<span class="material-symbols-outlined animate-spin text-[20px]">sync</span><span>Dispatching Jobs...</span>`;
+    btn.innerHTML = `<span class="material-symbols-outlined animate-spin text-[20px]">sync</span><span>Dispatching ${{files.length}} Pages to AI Backend...</span>`;
     
+    const filesParam = encodeURIComponent(files.join(','));
+    const projParam = encodeURIComponent('{project_name}');
     setTimeout(() => {{
-      btn.innerHTML = `<span class="material-symbols-outlined text-[20px]">check</span><span>Jobs Queued #8812</span>`;
-      btn.classList.remove('bg-primary-container', 'pulse-glow');
-      btn.classList.add('bg-secondary');
-      
-      setTimeout(() => {{
-        navigateParent('queue-monitor');
-      }}, 900);
-    }}, 1200);
+      navigateParent(`queue-monitor?project=${{projParam}}&run_pipeline=1&files=${{filesParam}}`);
+    }}, 400);
   }});
 }}
 </script>
@@ -688,5 +588,4 @@ if (startBtn) {{
 </html>
 """
 
-# Render the Google Stitch component seamlessly
 components.html(chapter_studio_html, height=1150, scrolling=True)
