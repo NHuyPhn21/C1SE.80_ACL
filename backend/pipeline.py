@@ -143,7 +143,55 @@ def run_full_acl_pipeline(
     finally:
         db.close()
 
+def process_chapter_batch(chapter_folder_path: str, force_reprocess: bool = False, use_lama_api: bool = False) -> list[dict]:
+    """
+    Xử lý hàng loạt toàn bộ các trang truyện nằm trong một thư mục (Chapter Folder).
+    Đầu vào: Đường dẫn tới thư mục chứa raw scans (ví dụ: "data/raw_images/AisazuNihaIrarenai")
+    Đầu ra: Danh sách kết quả JSON cho từng trang.
+    """
+    folder = Path(resolve_project_path(chapter_folder_path))
+    if not folder.exists() or not folder.is_dir():
+        print(f"❌ Thư mục chương truyện không tồn tại: {chapter_folder_path}")
+        return []
 
+    # Lọc tất cả các file ảnh định dạng phổ biến, sắp xếp theo tên (001.jpg, 002.jpg, ...)
+    valid_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+    image_files = sorted([f for f in folder.iterdir() if f.suffix.lower() in valid_extensions])
+
+    if not image_files:
+        print(f"⚠️ Không tìm thấy file ảnh nào trong thư mục: {chapter_folder_path}")
+        return []
+
+    print(f"\n📚 BẮT ĐẦU XỬ LÝ HÀNG LOẠT CHƯƠNG TRUYỆN: {folder.name}")
+    print(f"📂 Tổng số trang phát hiện: {len(image_files)} trang\n")
+
+    batch_start_time = time.time()
+    results = []
+
+    for idx, img_file in enumerate(image_files, start=1):
+        print(f"--------------------------------------------------")
+        print(f"📖 Đang xử lý trang {idx}/{len(image_files)}: {img_file.name}")
+        print(f"--------------------------------------------------")
+
+        res = run_full_acl_pipeline(
+            input_image_path=str(img_file),
+            page_number=idx,
+            force_reprocess=force_reprocess,
+            use_lama_api=use_lama_api
+        )
+        results.append(res)
+
+    total_elapsed = time.time() - batch_start_time
+    success_count = sum(1 for r in results if r.get("status") == "success")
+
+    print(f"\n==================================================")
+    print(f"🎉 HOÀN TẤT LÔ HÀNG LOẠT CHO THƯ MỤC: {folder.name}")
+    print(f"✅ Thành công: {success_count}/{len(image_files)} trang")
+    print(f"⏱️ Tổng thời gian: {total_elapsed:.2f} giây (~{total_elapsed/len(image_files):.1f}s/trang)")
+    print(f"📁 Thư mục kết quả: data/rendered_pages/")
+    print(f"==================================================\n")
+
+    return results
 # =====================================================================
 # TEST TRỰC TIẾP TRÊN TERMINAL VỚI MỘT TRANG TRUYỆN MỚI BẤT KỲ
 # =====================================================================

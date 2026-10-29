@@ -22,7 +22,6 @@ def resolve_project_path(file_path: str) -> str:
     normalized = file_path.replace("\\", "/")
     if os.path.exists(normalized):
         return normalized
-    # Nếu trong DB lưu đường dẫn tương đối, ghép với BASE_DIR
     candidate = BASE_DIR / normalized
     if candidate.exists():
         return str(candidate)
@@ -119,8 +118,7 @@ def run_lama_inpainting(
 ):
     """
     Cơ chế Hybrid Inpainting:
-    - Mặc định (use_lama_api=False): Dùng thuật toán OpenCV Telea + Làm trắng thông minh (0.05s/trang),
-      không cần bật Server phụ, chạy cực nhẹ trên mọi Cloud Server.
+    - Mặc định (use_lama_api=False): Dùng thuật toán OpenCV Telea + Làm trắng thông minh (0.05s/trang).
     - Nếu bật use_lama_api=True: Gọi tới LaMa Server và tự động fallback về OpenCV nếu Server tắt.
     """
     t0 = time.time()
@@ -136,7 +134,6 @@ def run_lama_inpainting(
     if mask_img is None:
         return None
 
-    # Tùy chọn 1: Thử gọi LaMa API nếu được bật
     if use_lama_api:
         try:
             payload = {
@@ -161,12 +158,10 @@ def run_lama_inpainting(
         except Exception:
             print("⚠️ LaMa API không phản hồi, tự động chuyển sang chế độ OpenCV siêu tốc...")
 
-    # Tùy chọn 2 (Mặc định & Khuyên dùng cho Web): Tẩy siêu tốc bằng OpenCV Telea + White Fill
     orig_img = cv2.imread(img_real_path)
     if orig_img is None:
         return None
 
-    # Nội suy mượt vùng viền bằng thuật toán Telea, sau đó làm trắng tinh khiết phần ruột chữ
     cleaned_img = cv2.inpaint(orig_img, mask_img, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
     cleaned_img[mask_img > 127] = [255, 255, 255]
 
@@ -175,12 +170,29 @@ def run_lama_inpainting(
     return final_output_path
 
 
-def get_bubble_safe_zone(img_gray_cleaned: np.ndarray, x1: int, y1: int, x2: int, y2: int):
+def get_bubble_safe_zone(
+    img_gray_cleaned: np.ndarray,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    occupied_mask: np.ndarray = None
+):
+    """
+    Tìm tâm thị giác của bóng thoại bằng Distance Transform + Connected Components,
+    đồng thời tự động trừ đi phần diện tích đã bị các bóng thoại trước chiếm chỗ (occupied_mask).
+    """
     raw_w = x2 - x1
     raw_h = y2 - y1
     roi = img_gray_cleaned[y1:y2, x1:x2]
 
     _, white_mask = cv2.threshold(roi, 230, 255, cv2.THRESH_BINARY)
+
+    # KỸ THUẬT CHỐNG ĐÈ CHỮ KHI 2 BÓNG THOẠI DÍNH NHAU:
+    # Khóa vùng đã có chữ của bóng thoại trước thành màu đen (0) để thuật toán tự tìm nửa bóng thoại còn trống
+    if occupied_mask is not None:
+        occ_roi = occupied_mask[y1:y2, x1:x2]
+        white_mask = cv2.bitwise_and(white_mask, cv2.bitwise_not(occ_roi))
 
     kernel = np.ones((3, 3), np.uint8)
     white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
@@ -192,13 +204,13 @@ def get_bubble_safe_zone(img_gray_cleaned: np.ndarray, x1: int, y1: int, x2: int
     cx_init, cy_init = raw_w // 2, raw_h // 2
     if num_labels > 1:
         center_label = labels[cy_init, cx_init]
-        if center_label != 0 and stats[center_label, cv2.CC_STAT_AREA] > (raw_w * raw_h * 0.15):
+        if center_label != 0 and stats[center_label, cv2.CC_STAT_AREA] > (raw_w * raw_h * 0.12):
             best_label = center_label
         else:
             max_score = 0
             for i in range(1, num_labels):
                 area = stats[i, cv2.CC_STAT_AREA]
-                if area < (raw_w * raw_h * 0.1):
+                if area < (raw_w * raw_h * 0.08):
                     continue
                 bx, by, bw, bh, _ = stats[i]
                 dist_to_center = np.hypot((bx + bw / 2) - cx_init, (by + bh / 2) - cy_init)
@@ -208,7 +220,7 @@ def get_bubble_safe_zone(img_gray_cleaned: np.ndarray, x1: int, y1: int, x2: int
                     best_label = i
 
     if best_label == -1:
-        return (x1 + raw_w / 2.0, y1 + raw_h / 2.0, raw_w * 0.72, raw_h * 0.76)
+        return (x1 + raw_w / 2.0, y1 + raw_h / 2.0, raw_w * 0.70, raw_h * 0.72)
 
     bubble_mask = np.uint8(labels == best_label) * 255
 
@@ -217,21 +229,85 @@ def get_bubble_safe_zone(img_gray_cleaned: np.ndarray, x1: int, y1: int, x2: int
 
     max_dist = dist.max()
     if max_dist <= 2:
-        return (x1 + raw_w / 2.0, y1 + raw_h / 2.0, raw_w * 0.72, raw_h * 0.76)
+        return (x1 + raw_w / 2.0, y1 + raw_h / 2.0, raw_w * 0.70, raw_h * 0.72)
 
-    core_y, core_x = np.where(dist >= max_dist * 0.55)
+    # Nâng ngưỡng hạt nhân từ 0.55 lên 0.65 để khóa chặt vào phần bụng phình to nhất của nửa bóng thoại đang xét
+    core_y, core_x = np.where(dist >= max_dist * 0.65)
     weights = dist[core_y, core_x] ** 2
     local_cx = float(np.average(core_x, weights=weights))
     local_cy = float(np.average(core_y, weights=weights))
 
-    bx, by, bw, bh, _ = stats[best_label]
-    avail_half_w = min(local_cx - bx, (bx + bw) - local_cx)
-    avail_half_h = min(local_cy - by, (by + bh) - local_cy)
+    # Quét tia ngang & dọc từ tâm thị giác (local_cx, local_cy) tới rìa vùng trắng trống
+    row_pixels = bubble_mask[int(local_cy), :] > 0
+    col_pixels = bubble_mask[:, int(local_cx)] > 0
 
-    safe_w = max(avail_half_w * 2 * 0.72, raw_w * 0.42)
-    safe_h = max(avail_half_h * 2 * 0.84, raw_h * 0.50)
+    left = int(local_cx)
+    while left > 0 and row_pixels[left - 1]:
+        left -= 1
+    right = int(local_cx)
+    while right < raw_w - 1 and row_pixels[right + 1]:
+        right += 1
+
+    top = int(local_cy)
+    while top > 0 and col_pixels[top - 1]:
+        top -= 1
+    bottom = int(local_cy)
+    while bottom < raw_h - 1 and col_pixels[bottom + 1]:
+        bottom += 1
+
+    avail_half_w = min(local_cx - left, right - local_cx)
+    avail_half_h = min(local_cy - top, bottom - local_cy)
+
+    safe_w = max(avail_half_w * 2 * 0.82, max_dist * 1.40, raw_w * 0.38)
+    safe_h = max(avail_half_h * 2 * 0.85, max_dist * 1.40, raw_h * 0.45)
+
+    safe_w = min(safe_w, raw_w * 0.76)
+    safe_h = min(safe_h, raw_h * 0.76)
 
     return (x1 + local_cx, y1 + local_cy, safe_w, safe_h)
+
+
+def _deduplicate_db_regions(regions: list) -> list:
+    """
+    Khử các vùng chữ bị lưu trùng trong Database (do các lần chạy trước chưa có bộ lọc YOLO IoU
+    hoặc 2 box lồng nhau đọc ra cùng một câu chữ Nhật).
+    """
+    kept = []
+    for r in regions:
+        if not r.translated_text or not r.translated_text.strip():
+            continue
+
+        bbox = json.loads(r.bbox_json)
+        x1, y1, x2, y2 = map(int, bbox[:4])
+        area_curr = max(1, (x2 - x1) * (y2 - y1))
+        orig_clean = (r.original_text or "").strip()
+
+        is_dup = False
+        for kr, kx1, ky1, kx2, ky2 in kept:
+            ix1, iy1 = max(x1, kx1), max(y1, ky1)
+            ix2, iy2 = min(x2, kx2), min(y2, ky2)
+            inter_area = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+            area_kept = max(1, (kx2 - kx1) * (ky2 - ky1))
+
+            iou = inter_area / float(area_curr + area_kept - inter_area) if inter_area > 0 else 0
+            containment = inter_area / float(min(area_curr, area_kept)) if inter_area > 0 else 0
+
+            # 1. Nếu 2 box đè lên nhau quá nhiều (> 40% IoU hoặc > 60% nằm lọt lòng nhau)
+            if iou > 0.40 or containment > 0.60:
+                is_dup = True
+                break
+
+            # 2. Nếu 2 box giao nhau (hoặc sát nhau) và câu tiếng Nhật gốc giống nhau (ví dụ ID 57 & ID 64)
+            k_orig = (kr.original_text or "").strip()
+            if orig_clean and k_orig and len(orig_clean) >= 4 and len(k_orig) >= 4:
+                if (orig_clean in k_orig or k_orig in orig_clean) and inter_area > 0:
+                    is_dup = True
+                    break
+
+        if not is_dup:
+            kept.append((r, x1, y1, x2, y2))
+
+    return [item[0] for item in kept]
 
 
 def render_translated_text_on_page(
@@ -254,30 +330,40 @@ def render_translated_text_on_page(
         img_gray_cleaned = cv2.imread(inpainted_image_path, cv2.IMREAD_GRAYSCALE)
         draw = ImageDraw.Draw(img)
 
-        # Cache bộ font từ size 8 đến 22 vào RAM để không phải đọc ổ cứng lặp lại hàng trăm lần
+        h_img, w_img = img_gray_cleaned.shape[:2]
+
+        # BẢN ĐỒ CHỐNG VA CHẠM TOÀN TRANG (0 = vùng trống, 255 = vùng đã có chữ chiếm chỗ)
+        occupied_mask = np.zeros((h_img, w_img), dtype=np.uint8)
+
+        # Cache bộ font từ size 8 đến 22 vào RAM
         max_font = 22
         font_cache = {
             size: ImageFont.truetype(resolved_font, size)
             for size in range(8, max_font + 1)
         }
 
-        regions = db.query(TextRegion).filter(TextRegion.page_id == page_id).all()
+        raw_regions = db.query(TextRegion).filter(TextRegion.page_id == page_id).all()
+        # Lọc sạch các bóng thoại bị trùng trong Database trước khi vẽ
+        regions = _deduplicate_db_regions(raw_regions)
+
+        # Ưu tiên vẽ các bóng thoại có khung gọn trước, khung to bao trùm vẽ sau để né chính xác
+        regions.sort(key=lambda r: (
+            (json.loads(r.bbox_json)[2] - json.loads(r.bbox_json)[0]) *
+            (json.loads(r.bbox_json)[3] - json.loads(r.bbox_json)[1])
+        ))
 
         for region in regions:
-            if not region.translated_text:
-                continue
-
             bbox = json.loads(region.bbox_json)
-            x1, y1, x2, y2 = map(int, bbox)
+            x1, y1, x2, y2 = map(int, bbox[:4])
 
-            h_img, w_img = img_gray_cleaned.shape[:2]
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w_img, x2), min(h_img, y2)
             if x2 - x1 <= 20 or y2 - y1 <= 20:
                 continue
 
+            # Truyền occupied_mask vào để tự động né vùng chữ đã vẽ của bóng thoại kế bên
             center_x, center_y, box_width, box_height = get_bubble_safe_zone(
-                img_gray_cleaned, x1, y1, x2, y2
+                img_gray_cleaned, x1, y1, x2, y2, occupied_mask=occupied_mask
             )
 
             text = region.translated_text.strip()
@@ -342,6 +428,14 @@ def render_translated_text_on_page(
                 stroke_width=2,
                 stroke_fill="white"
             )
+
+            # ĐÁNH DẤU VÙNG VỪA VẼ VÀO OCCUPIED_MASK (kèm khoảng đệm 10px) ĐỂ BÓNG THOẠI KẾ BÊN TỰ ĐỘNG NÉ
+            pad_occ = 10
+            occ_x1 = max(0, int(center_x - max(text_w, box_width * 0.75) / 2.0 - pad_occ))
+            occ_y1 = max(0, int(center_y - max(text_h, box_height * 0.75) / 2.0 - pad_occ))
+            occ_x2 = min(w_img, int(center_x + max(text_w, box_width * 0.75) / 2.0 + pad_occ))
+            occ_y2 = min(h_img, int(center_y + max(text_h, box_height * 0.75) / 2.0 + pad_occ))
+            occupied_mask[occ_y1:occ_y2, occ_x1:occ_x2] = 255
 
         filename = os.path.basename(resolve_project_path(page.original_path))
         output_path = str(out_dir_path / f"final_{filename}")
