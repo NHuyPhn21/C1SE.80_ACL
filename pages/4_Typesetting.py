@@ -1,32 +1,164 @@
-"""ACL Live Typesetting Editor — Speech Bubble Typography Studio — Screen ACL-08.
+"""ACL Live Typesetting Editor — Speech Bubble Typography Studio — Screen ACL-08 (Live Backend Connected)."""
 
-Pixel-perfect implementation of Google Stitch Project 'UX/UI_ACL' (ID: 15081338219515375601).
-Screen: ACL-08: Live Typesetting Editor — Speech Bubble Typography Studio.
-Includes full Vietnamese Unicode font support with fallback metrics to ensure Google Translate never breaks fonts.
-100% English UI Labels.
-"""
-
+import json
+import os
+from pathlib import Path
+from PIL import Image
 import streamlit as st
 import streamlit.components.v1 as components
 
 from utils.auth_session import require_auth
-
+from backend.database import SessionLocal
+from backend.models import ComicPage, TextRegion
+from backend.image_utils import (
+    BASE_DIR,
+    resolve_project_path,
+    encode_image_to_base64,
+    process_comic_page,
+    _deduplicate_db_regions,
+)
 
 # Enforce authentication guard
 user = require_auth()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
-user_name = user.full_name or "Phan Van Quan"
+user_name = user.full_name or "Phan Nhat Huy"
+project_name = st.query_params.get("project", "Shonen Weekly #112")
+
+db = SessionLocal()
+try:
+    all_pages = db.query(ComicPage).order_by(ComicPage.id.asc()).all()
+
+    # =====================================================================
+    # 1. NẾU NGƯỜI DÙNG BẤM LƯU BẢN DỊCH TIẾNG VIỆT & RENDER LẠI TRANG
+    # =====================================================================
+    if st.query_params.get("save_typeset") == "1":
+        target_pid = int(st.query_params.get("page_id", 0))
+        updates_raw = st.query_params.get("updates", "{}")
+        go_queue = st.query_params.get("go_queue", "0")
+        try:
+            updates_dict = json.loads(updates_raw)
+            for reg_id_str, new_vi_text in updates_dict.items():
+                reg = db.query(TextRegion).filter(TextRegion.id == int(reg_id_str)).first()
+                if reg and new_vi_text is not None:
+                    reg.translated_text = new_vi_text.strip()
+            db.commit()
+
+            # Chạy lại bước Inpainting + Auto-Typesetting để vẽ ngay chữ tiếng Việt mới lên ảnh
+            if target_pid:
+                final_path = process_comic_page(page_id=target_pid, use_lama_api=False)
+                page_obj = db.query(ComicPage).filter(ComicPage.id == target_pid).first()
+                if page_obj and final_path:
+                    page_obj.rendered_path = str(Path(final_path).relative_to(BASE_DIR)).replace("\\", "/")
+                    page_obj.status = "COMPLETED"
+                    db.commit()
+        except Exception as e:
+            print(f"⚠️ Lỗi khi lưu và vẽ lại trang tại Typesetting: {e}")
+
+        st.query_params.clear()
+        st.query_params["project"] = project_name
+        st.query_params["page_id"] = str(target_pid)
+        if go_queue == "1":
+            st.switch_page("pages/5_Queue_Monitor.py")
+        else:
+            st.rerun()
+
+    # =====================================================================
+    # 2. LẤY DỮ LIỆU TRANG HIỆN TẠI ĐỂ HIỂN THỊ LÊN CANVAS
+    # =====================================================================
+    req_page_id = st.query_params.get("page_id")
+    current_page = None
+    if req_page_id and str(req_page_id).isdigit():
+        current_page = db.query(ComicPage).filter(ComicPage.id == int(req_page_id)).first()
+    if not current_page and all_pages:
+        current_page = all_pages[-1]
+
+    rendered_b64 = ""
+    orig_b64 = ""
+    img_w, img_h = 1600, 2560
+    regions_list = []
+    page_idx = 1
+    total_pages = max(1, len(all_pages))
+    current_page_id = current_page.id if current_page else 1
+    page_filename = "046.jpg"
+    prev_page_id = current_page_id
+    next_page_id = current_page_id
+
+    if current_page:
+        page_ids = [p.id for p in all_pages]
+        if current_page.id in page_ids:
+            idx_pos = page_ids.index(current_page.id)
+            page_idx = idx_pos + 1
+            prev_page_id = page_ids[max(0, idx_pos - 1)]
+            next_page_id = page_ids[min(len(page_ids) - 1, idx_pos + 1)]
+
+        orig_real = resolve_project_path(current_page.original_path)
+        page_filename = os.path.basename(orig_real)
+        if os.path.exists(orig_real):
+            orig_b64 = encode_image_to_base64(orig_real)
+            with Image.open(orig_real) as im:
+                img_w, img_h = im.size
+
+        # Tìm file ảnh đã dịch trong data/rendered_pages
+        rendered_candidate = BASE_DIR / "data" / "rendered_pages" / f"final_{page_filename}"
+        if current_page.rendered_path and os.path.exists(resolve_project_path(current_page.rendered_path)):
+            rendered_real = resolve_project_path(current_page.rendered_path)
+        elif rendered_candidate.exists():
+            rendered_real = str(rendered_candidate)
+        else:
+            rendered_real = orig_real
+
+        if os.path.exists(rendered_real):
+            rendered_b64 = encode_image_to_base64(rendered_real)
+
+        raw_regs = db.query(TextRegion).filter(TextRegion.page_id == current_page.id).all()
+        clean_regs = _deduplicate_db_regions(raw_regs) if raw_regs else []
+        if not clean_regs and raw_regs:
+            clean_regs = raw_regs
+
+        for idx, r in enumerate(clean_regs, start=1):
+            bbox = json.loads(r.bbox_json)
+            x1, y1, x2, y2 = map(int, bbox[:4])
+            regions_list.append({
+                "index": idx,
+                "id": r.id,
+                "left_pct": round((x1 / max(1, img_w)) * 100, 2),
+                "top_pct": round((y1 / max(1, img_h)) * 100, 2),
+                "width_pct": round(((x2 - x1) / max(1, img_w)) * 100, 2),
+                "height_pct": round(((y2 - y1) / max(1, img_h)) * 100, 2),
+                "original_text": r.original_text or "",
+                "translated_text": r.translated_text or "",
+            })
+finally:
+    db.close()
+
+# Tạo các vùng click trong suốt trên ảnh để chọn nhanh bóng thoại cần sửa
+click_hotspots_html = ""
+bubble_options_html = ""
+
+for item in regions_list:
+    idx = item["index"]
+    rid = item["id"]
+    vi_short = (item["translated_text"][:28] + "...") if len(item["translated_text"]) > 28 else item["translated_text"]
+    click_hotspots_html += f"""
+      <div onclick="selectBubble({idx - 1})" id="hotspot-{idx - 1}"
+           style="left: {item['left_pct']}%; top: {item['top_pct']}%; width: {item['width_pct']}%; height: {item['height_pct']}%;"
+           title="Click to edit Bubble #{idx}"
+           class="absolute cursor-pointer rounded-sm transition-all hover:ring-2 hover:ring-primary-container/80 hover:bg-primary-container/10">
+      </div>
+    """
+    bubble_options_html += f'<option value="{idx - 1}">Bubble #{idx} — {vi_short}</option>'
+
+regions_json = json.dumps(regions_list, ensure_ascii=False)
+total_bubbles = len(regions_list)
 
 typesetting_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta content="web_dashboard" name="shell-type"/>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<!-- Comprehensive Google Fonts import with explicit Vietnamese & Latin-Ext subsets to prevent font breakage during browser translation -->
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Sora:wght@600;700;800&subset=vietnamese,latin,latin-ext&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
 
@@ -36,144 +168,52 @@ typesetting_html = f"""<!DOCTYPE html>
     margin: 0;
     padding: 0;
     background: #fff8f3;
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+    font-family: 'Plus Jakarta Sans', sans-serif;
     color: #1d1b18;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
   }}
-  body {{ overscroll-behavior: none; }}
-  main > :first-child {{ margin-top: 0 !important; }}
-  main > :last-child {{ margin-bottom: 0 !important; }}
 }}
-
-/* Google Translate DOM Injection Compatibility Fixes:
-   Ensure all translated elements inherit full font family, line-height, and baseline alignment */
-font {{
-  font-family: inherit !important;
-  font-size: inherit !important;
-  line-height: inherit !important;
-  color: inherit !important;
-  letter-spacing: inherit !important;
-  vertical-align: baseline !important;
-  display: inline !important;
-}}
-
-/* Hide native scrollbar while retaining scroll capability */
 ::-webkit-scrollbar {{ display: none; }}
-
 .material-symbols-outlined {{
   font-family: 'Material Symbols Outlined';
-  font-weight: normal;
-  font-style: normal;
   font-size: 20px;
   line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
   display: inline-block;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
 }}
 </style>
 
 <script src="https://cdn.tailwindcss.com"></script>
-<script id="tailwind-config">
+<script>
 tailwind.config = {{
-  darkMode: "class",
   theme: {{
     extend: {{
       colors: {{
         "secondary": "#536435",
         "outline-variant": "#c6c5d1",
-        "on-secondary-fixed": "#131f00",
-        "tertiary-fixed": "#e6deff",
-        "on-secondary": "#ffffff",
         "surface-variant": "#e7e1dc",
         "primary-fixed": "#dee1ff",
-        "tertiary-fixed-dim": "#cabffc",
-        "on-error-container": "#93000a",
         "outline": "#767681",
         "surface-container-high": "#ede7e2",
-        "primary-fixed-dim": "#b9c3ff",
         "on-surface": "#1d1b18",
-        "error-container": "#ffdad6",
-        "on-primary-fixed": "#041453",
         "error": "#ba1a1a",
-        "surface-dim": "#dfd9d4",
-        "on-background": "#1d1b18",
-        "secondary-fixed": "#d6eaaf",
-        "secondary-fixed-dim": "#bace95",
-        "inverse-on-surface": "#f6f0ea",
         "on-surface-variant": "#454650",
         "inverse-surface": "#32302d",
         "surface": "#fff8f3",
-        "on-tertiary-container": "#a399d4",
-        "on-primary-container": "#909ce0",
-        "surface-tint": "#4e5a99",
         "surface-container": "#f3ede7",
-        "background": "#fff8f3",
         "secondary-container": "#d3e7ac",
-        "on-tertiary-fixed": "#1c1245",
         "primary": "#0c1b59",
-        "on-secondary-fixed-variant": "#3c4c20",
         "surface-container-low": "#f9f2ed",
-        "on-tertiary-fixed-variant": "#484073",
         "on-secondary-container": "#576839",
-        "tertiary": "#231a4c",
-        "tertiary-container": "#383063",
-        "on-error": "#ffffff",
-        "inverse-primary": "#b9c3ff",
         "surface-container-highest": "#e7e1dc",
         "on-primary": "#ffffff",
         "surface-container-lowest": "#ffffff",
-        "primary-container": "#25326f",
-        "on-primary-fixed-variant": "#354280",
-        "on-tertiary": "#ffffff",
-        "surface-bright": "#fff8f3"
-      }},
-      borderRadius: {{
-        "DEFAULT": "0.25rem",
-        "lg": "0.5rem",
-        "xl": "0.75rem",
-        "full": "9999px"
+        "primary-container": "#25326f"
       }},
       spacing: {{
         "space-xs": "0.25rem",
         "space-sm": "0.5rem",
         "space-md": "1rem",
         "space-lg": "1.5rem",
-        "space-xl": "2rem",
-        "gutter": "1rem",
-        "gutter-lg": "1.5rem",
-        "margin": "1rem",
-        "margin-md": "1.5rem",
-        "margin-lg": "2rem"
-      }},
-      fontFamily: {{
-        "display-lg": ["Sora", "sans-serif"],
-        "headline-lg": ["Sora", "sans-serif"],
-        "headline-md": ["Sora", "sans-serif"],
-        "headline-sm": ["Sora", "sans-serif"],
-        "title-md": ["Plus Jakarta Sans", "sans-serif"],
-        "body-lg": ["Plus Jakarta Sans", "sans-serif"],
-        "body-md": ["Plus Jakarta Sans", "sans-serif"],
-        "body-sm": ["Plus Jakarta Sans", "sans-serif"],
-        "label-md": ["Plus Jakarta Sans", "sans-serif"],
-        "code-md": ["JetBrains Mono", "monospace"],
-        "code-sm": ["JetBrains Mono", "monospace"]
-      }},
-      fontSize: {{
-        "display-lg": ["40px", {{ "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700" }}],
-        "headline-lg": ["32px", {{ "lineHeight": "40px", "letterSpacing": "-0.015em", "fontWeight": "600" }}],
-        "headline-md": ["24px", {{ "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }}],
-        "headline-sm": ["18px", {{ "lineHeight": "26px", "fontWeight": "600" }}],
-        "title-md": ["16px", {{ "lineHeight": "24px", "fontWeight": "600" }}],
-        "body-lg": ["16px", {{ "lineHeight": "24px", "fontWeight": "400" }}],
-        "body-md": ["14px", {{ "lineHeight": "20px", "fontWeight": "400" }}],
-        "body-sm": ["12px", {{ "lineHeight": "18px", "fontWeight": "400" }}],
-        "label-md": ["13px", {{ "lineHeight": "18px", "fontWeight": "500" }}],
-        "code-md": ["13px", {{ "lineHeight": "18px", "fontWeight": "500" }}],
-        "code-sm": ["11px", {{ "lineHeight": "16px", "fontWeight": "400" }}]
+        "space-xl": "2rem"
       }}
     }}
   }}
@@ -181,462 +221,196 @@ tailwind.config = {{
 </script>
 </head>
 
-<body class="bg-surface font-body-md text-on-surface antialiased">
+<body class="bg-surface text-on-surface antialiased">
 
 <!-- FIXED LEFT SIDEBAR -->
-<aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)] select-none">
+<aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between shadow-sm border-r border-[#E4DFD6] select-none">
   <div class="flex flex-col">
     <div class="px-space-md pt-space-lg pb-space-md border-b border-[#E4DFD6]">
-      <div class="font-headline-md text-headline-md text-primary tracking-tight notranslate" translate="no">ACL</div>
-      <div class="font-body-sm text-body-sm text-on-surface-variant font-medium leading-tight">Automated Comic Localization</div>
-      <div class="mt-space-xs inline-flex items-center gap-1 px-space-xs py-0.5 rounded-full bg-surface-container text-on-surface-variant font-code-sm text-code-sm notranslate" translate="no">
-        <span>C1SE.80</span>
-      </div>
+      <div class="text-2xl font-bold text-primary tracking-tight notranslate" translate="no">ACL</div>
+      <div class="text-xs text-on-surface-variant font-medium">Automated Comic Localization</div>
     </div>
 
-    <!-- Navigation Stack -->
-    <nav class="flex flex-col gap-1 px-space-sm mt-space-xs">
-      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md cursor-pointer" onclick="navigateParent('workspace')">
-        <span class="material-symbols-outlined text-[20px]">grid_view</span>
+    <nav class="flex flex-col gap-1 px-space-sm mt-space-xs text-sm">
+      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high cursor-pointer" onclick="navigateParent('workspace')">
+        <span class="material-symbols-outlined">grid_view</span>
         <span>Dashboard</span>
       </a>
-      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md cursor-pointer" onclick="navigateParent('workspace')">
-        <span class="material-symbols-outlined text-[20px]">folder</span>
-        <span>Projects</span>
-      </a>
-      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md cursor-pointer" onclick="navigateParent('team-roles')">
-        <span class="material-symbols-outlined text-[20px]">groups</span>
-        <span>Team Roles</span>
-      </a>
-      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md cursor-pointer" onclick="navigateParent('chapter-studio')">
-        <span class="material-symbols-outlined text-[20px]">auto_stories</span>
+      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high cursor-pointer" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{project_name}'))">
+        <span class="material-symbols-outlined">auto_stories</span>
         <span>Chapter Studio</span>
       </a>
-      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md cursor-pointer" onclick="navigateParent('review-studio')">
-        <span class="material-symbols-outlined text-[20px]">rate_review</span>
+      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high cursor-pointer" onclick="navigateParent('review-studio?page_id={current_page_id}')">
+        <span class="material-symbols-outlined">rate_review</span>
         <span>Review Studio</span>
       </a>
-      <a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg bg-primary-container text-on-primary font-title-md font-semibold cursor-pointer" onclick="navigateParent('typesetting')">
-        <span class="material-symbols-outlined text-[20px]">format_shapes</span>
+      <a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg bg-primary-container text-on-primary font-semibold cursor-pointer">
+        <span class="material-symbols-outlined">format_shapes</span>
         <span>Typesetting</span>
       </a>
-      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md cursor-pointer" onclick="navigateParent('queue-monitor')">
-        <span class="material-symbols-outlined text-[20px]">monitoring</span>
+      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high cursor-pointer" onclick="navigateParent('queue-monitor?project=' + encodeURIComponent('{project_name}'))">
+        <span class="material-symbols-outlined">monitoring</span>
         <span>Queue Monitor</span>
-      </a>
-      <a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md cursor-pointer" onclick="navigateParent('settings')">
-        <span class="material-symbols-outlined text-[20px]">tune</span>
-        <span>Personal Settings</span>
       </a>
     </nav>
   </div>
 
   <div class="p-space-md border-t border-[#E4DFD6]">
-    <div class="flex items-center justify-between px-space-sm py-2 rounded-lg bg-surface-container-low">
-      <div class="flex items-center gap-2">
-        <span class="w-2 h-2 rounded-full bg-secondary"></span>
-        <span class="font-code-sm text-code-sm text-on-surface-variant notranslate" translate="no">v2.4.0-prod</span>
-      </div>
-      <span class="material-symbols-outlined text-outline text-[16px]">cloud_done</span>
+    <div class="flex items-center justify-between px-space-sm py-2 rounded-lg bg-surface-container-low text-xs font-mono">
+      <span>HLcomic1 Font • Active</span>
+      <span class="w-2 h-2 rounded-full bg-secondary"></span>
     </div>
   </div>
 </aside>
 
 <!-- MAIN APP SHELL -->
 <div class="pl-[220px]">
-
-  <!-- TOP HEADER BAR -->
-  <header class="fixed top-0 left-[220px] right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 flex items-center justify-between px-space-lg border-b border-[#E4DFD6]">
-    <div class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">
-      <a class="font-medium text-on-surface hover:text-primary-container transition-colors cursor-pointer" onclick="navigateParent('workspace')">Workspace</a>
-      <span class="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
-      <span class="text-primary-container font-semibold">Typesetting Studio</span>
+  <header class="fixed top-0 left-[220px] right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-md z-40 flex items-center justify-between px-space-lg border-b border-[#E4DFD6]">
+    <div class="flex items-center gap-2 text-xs text-on-surface-variant">
+      <a class="font-medium text-on-surface cursor-pointer" onclick="navigateParent('workspace')">Workspace</a>
+      <span>/</span>
+      <span class="text-primary-container font-semibold">Live Typesetting Studio (final_{page_filename})</span>
     </div>
     <div class="flex items-center gap-space-md">
-      <button aria-label="Notifications" class="flex items-center justify-center w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button">
-        <span class="material-symbols-outlined text-[20px]">notifications</span>
-      </button>
-      <button aria-label="Help &amp; Documentation" class="flex items-center justify-center w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button">
-        <span class="material-symbols-outlined text-[20px]">help</span>
-      </button>
-      <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center font-title-md text-label-md text-on-primary font-semibold tracking-wide select-none notranslate" translate="no" title="{user_name}">
-        {user_initials}
-      </div>
-      <button onclick="navigateParent('login?logout=1')" class="text-on-surface-variant hover:text-primary-container text-xs font-semibold px-2 py-1 rounded border border-[#E4DFD6] hover:bg-surface-variant transition-colors" title="Sign out">
-        Sign out
-      </button>
+      <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-xs text-on-primary font-semibold notranslate" translate="no">{user_initials}</div>
     </div>
   </header>
 
-  <!-- MAIN VIEWPORT CONTENT -->
   <main class="relative pt-16 min-h-screen bg-surface w-full px-space-lg py-space-md">
     <div class="flex flex-col w-full">
 
       <!-- Top Workspace Context Bar -->
       <div class="flex flex-col md:flex-row md:items-center justify-between pb-space-md gap-space-sm">
-        <div class="flex flex-col">
+        <div>
           <div class="flex items-center gap-2">
-            <h1 class="font-headline-md text-headline-md text-on-surface tracking-tight">Live Typesetting Editor</h1>
-            <span class="px-space-xs py-0.5 rounded-full bg-primary/10 text-primary font-code-sm text-code-sm font-medium notranslate" translate="no">BETA-PRO</span>
+            <h1 class="text-xl font-bold text-on-surface">Live Typesetting Editor</h1>
+            <span class="px-2 py-0.5 rounded-full bg-secondary-container text-secondary font-mono text-xs font-semibold">Collision Avoidance Active</span>
           </div>
-          <div class="flex items-center gap-2 font-body-md text-body-md text-on-surface-variant flex-wrap">
-            <a class="hover:text-primary transition-colors cursor-pointer font-medium text-on-surface notranslate" translate="no" onclick="navigateParent('workspace')">Shonen Weekly #112</a>
-            <span>•</span>
-            <span id="header-page-label">Page 14</span>
-            <span class="text-outline-variant">/</span>
-            <span class="font-code-sm text-code-sm text-outline notranslate" translate="no">BATCH #CH-112-RAW</span>
-            <a class="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-container text-primary hover:bg-surface-container-high transition-colors cursor-pointer ml-1 inline-flex items-center gap-1" onclick="navigateParent('review-studio')" title="Back to Review Studio">
-              <span class="material-symbols-outlined text-[13px]">arrow_back</span>
-              <span>Review Studio</span>
-            </a>
-          </div>
+          <p class="text-xs text-on-surface-variant mt-0.5">
+            Click any speech bubble on the rendered page to refine Vietnamese dialogue and re-render instantaneously.
+          </p>
         </div>
 
         <!-- Center Pagination Control -->
-        <div class="inline-flex items-center gap-1.5 p-1 bg-surface-container rounded-full shadow-sm self-start md:self-center border border-[#E4DFD6]">
-          <button onclick="changePage(-1)" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-on-surface hover:bg-surface-container-lowest transition-all font-label-md text-label-md font-medium cursor-pointer" type="button">
+        <div class="inline-flex items-center gap-1.5 p-1 bg-surface-container rounded-full shadow-sm border border-[#E4DFD6]">
+          <button onclick="navigateParent('typesetting?page_id={prev_page_id}')" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-on-surface hover:bg-surface-container-lowest text-xs font-semibold cursor-pointer" type="button">
             <span class="material-symbols-outlined text-[18px]">arrow_back</span>
             <span>Prev Page</span>
           </button>
-          <div class="relative inline-flex items-center gap-1 px-3 py-1 bg-surface-container-lowest rounded-full shadow-xs cursor-pointer hover:bg-surface-container-low transition-colors">
-            <span class="font-label-md text-label-md font-semibold text-on-surface" id="pagination-display">Page 14 of 24</span>
-            <span class="material-symbols-outlined text-[16px] text-outline">unfold_more</span>
+          <div class="px-3 py-1 bg-surface-container-lowest rounded-full shadow-xs text-xs font-semibold text-on-surface">
+            <span>Page {page_idx} of {total_pages} ({page_filename})</span>
           </div>
-          <button onclick="changePage(1)" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-on-surface hover:bg-surface-container-lowest transition-all font-label-md text-label-md font-medium cursor-pointer" type="button">
+          <button onclick="navigateParent('typesetting?page_id={next_page_id}')" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-on-surface hover:bg-surface-container-lowest text-xs font-semibold cursor-pointer" type="button">
             <span>Next Page</span>
             <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
           </button>
-        </div>
-
-        <!-- Right Status Tag -->
-        <div class="flex items-center gap-2">
-          <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container/60 text-on-secondary-container font-label-md text-label-md font-medium">
-            <span class="material-symbols-outlined text-[16px] text-secondary">verified</span>
-            <span class="notranslate" translate="no">LaMa Inpainting Cleaned</span>
-          </div>
         </div>
       </div>
 
       <!-- Main Split Editor Workspace -->
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-space-md w-full items-start">
 
-        <!-- LEFT PANEL: Inpainted Canvas Stage (col-span-7) -->
+        <!-- LEFT PANEL: Real Rendered Manga Page Stage (col-span-7) -->
         <div class="lg:col-span-7 bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col gap-space-sm border border-[#E4DFD6]">
-          <!-- Stage Subheader -->
           <div class="flex items-center justify-between pb-2 border-b border-[#E4DFD6]">
             <div class="flex items-center gap-2">
-              <span class="font-title-md text-title-md text-on-surface font-semibold">Inpainted Canvas &amp; Live Text Overlay</span>
-              <span class="hidden sm:inline-block px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm notranslate" translate="no">1600 × 2560 px • Cleaned (LaMa GAN)</span>
+              <span class="text-sm font-semibold text-on-surface">Rendered Page Output (final_{page_filename})</span>
+              <span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-mono text-xs">{img_w} × {img_h} px</span>
             </div>
             <label class="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input class="sr-only peer" id="toggle-original-bg" type="checkbox"/>
-              <span class="w-7 h-4 bg-surface-container-high rounded-full peer peer-checked:bg-primary-container transition-colors relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:w-3 after:h-3 after:rounded-full after:transition-transform peer-checked:after:translate-x-3"></span>
-              <span class="font-body-sm text-body-sm text-on-surface-variant">Show Original OCR</span>
+              <input onchange="toggleOriginalImage(this.checked)" class="sr-only peer" id="toggle-original-bg" type="checkbox"/>
+              <span class="w-8 h-4 bg-surface-container-high rounded-full peer peer-checked:bg-primary-container transition-colors relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:w-3 after:h-3 after:rounded-full after:transition-transform peer-checked:after:translate-x-4"></span>
+              <span class="text-xs font-semibold text-on-surface-variant">Compare Original Japanese</span>
             </label>
           </div>
 
-          <!-- Manga Canvas Viewport -->
-          <div class="relative w-full rounded-lg bg-inverse-surface p-space-md flex items-center justify-center min-h-[620px] overflow-hidden select-none" id="viewport-box">
-            <!-- Live Manga Page Sheet Mockup -->
-            <div class="relative w-full max-w-[480px] aspect-[1/1.55] bg-[#FFFFFF] shadow-2xl rounded-sm overflow-hidden flex flex-col justify-between p-4" id="manga-sheet">
-              <!-- Comic Panel Grids -->
-              <div class="w-full h-full grid grid-cols-2 grid-rows-3 gap-2 p-3 bg-[#FCFCFD]">
-                <!-- Panel 1: Dynamic Action (Top) -->
-                <div class="col-span-2 row-span-1 rounded-sm bg-gradient-to-br from-surface-dim/40 via-surface-variant/20 to-surface-dim/30 relative overflow-hidden flex items-end p-2">
-                  <svg class="absolute inset-0 w-full h-full opacity-35 text-on-surface" fill="none" viewbox="0 0 400 200">
-                    <path d="M0 0L400 200M400 0L0 200M200 0L200 200M0 100L400 100M50 0L350 200M350 0L50 200" stroke="currentColor" stroke-dasharray="3 3" stroke-width="1.5"></path>
-                    <circle cx="200" cy="100" fill="none" r="45" stroke="currentColor" stroke-width="2"></circle>
-                  </svg>
-                  <div class="relative z-10 text-[9px] font-code-sm text-outline uppercase tracking-widest bg-surface-container-lowest/80 px-1 rounded notranslate" translate="no">Panel 01 • Dynamic Perspective</div>
-                </div>
-
-                <!-- Panel 2: Character Focus (Middle-Left) -->
-                <div class="col-span-1 row-span-1 rounded-sm bg-surface-container relative overflow-hidden flex flex-col justify-between p-2">
-                  <div class="w-16 h-16 rounded-full bg-outline-variant/30 self-center mt-3 flex items-center justify-center">
-                    <span class="material-symbols-outlined text-outline-variant text-[28px]">face</span>
-                  </div>
-                  <div class="text-[8px] font-code-sm text-outline bg-surface-container-lowest/90 px-1 rounded self-start notranslate" translate="no">Panel 02 • Close-up</div>
-                </div>
-
-                <!-- Panel 3: Sound Effect Inpainted Core (Middle-Right) -->
-                <div class="col-span-1 row-span-1 rounded-sm bg-surface-variant/30 relative overflow-hidden flex items-center justify-center p-2">
-                  <svg class="absolute inset-0 w-full h-full opacity-20 text-on-surface" viewbox="0 0 100 100">
-                    <polygon fill="currentColor" points="50,5 64,38 98,40 70,62 80,95 50,75 20,95 30,62 2,40 36,38"></polygon>
-                  </svg>
-                  <div class="text-[8px] font-code-sm text-outline absolute bottom-1 right-1 bg-surface-container-lowest/80 px-1 rounded notranslate" translate="no">Panel 03 • Impact</div>
-                </div>
-
-                <!-- Panel 4: Panoramic Destruction (Bottom) -->
-                <div class="col-span-2 row-span-1 rounded-sm bg-gradient-to-t from-surface-dim/40 to-transparent relative overflow-hidden flex items-end justify-between p-2">
-                  <div class="w-full flex items-center justify-between text-[8px] font-code-sm text-outline bg-surface-container-lowest/90 px-1.5 py-0.5 rounded notranslate" translate="no">
-                    <span>Panel 04 • Cityscape Horizon</span>
-                    <span>100% Inpainted (Artifacts: 0.02)</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- OVERLAY 1: ACTIVE SPEECH BUBBLE #1 (Top-Right) -->
-              <div class="absolute top-[8%] right-[8%] z-20 group cursor-pointer" id="bubble-target-1">
-                <div class="relative bg-surface-container-lowest rounded-[28px] px-5 py-4 shadow-lg min-w-[155px] text-center transition-transform hover:scale-[1.01] ring-2 ring-primary-container">
-                  <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-primary-container text-on-primary font-code-sm text-code-sm font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap notranslate" translate="no">
-                    <span class="w-1.5 h-1.5 rounded-full bg-secondary-fixed"></span>
-                    <span>#1 Selected • Active</span>
-                  </div>
-                  <div class="absolute -top-1 -left-1 w-2.5 h-2.5 bg-surface-container-lowest border border-primary-container rounded-xs"></div>
-                  <div class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-surface-container-lowest border border-primary-container rounded-xs"></div>
-                  <div class="absolute -bottom-1 -left-1 w-2.5 h-2.5 bg-surface-container-lowest border border-primary-container rounded-xs"></div>
-                  <div class="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-surface-container-lowest border border-primary-container rounded-xs"></div>
-                  
-                  <!-- Typeset Live Vietnamese Dialogue -->
-                  <div class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight select-text tracking-wide drop-shadow-[0_1px_1px_rgba(255,255,255,0.9)]" id="canvas-text-1">
-                    Thầy ơi,<br/>xin hãy đợi em với!
-                  </div>
-                  <div class="absolute -bottom-2 right-6 w-3 h-3 bg-surface-container-lowest rotate-45 border-r border-b border-primary-container"></div>
-                </div>
-              </div>
-
-              <!-- OVERLAY 2: EXCLAMATION BUBBLE #2 (Middle-Left) -->
-              <div class="absolute top-[38%] left-[7%] z-10 group cursor-pointer" id="bubble-target-2">
-                <div class="relative bg-surface-container-lowest/95 rounded-[30px] px-4 py-3 shadow-sm min-w-[140px] text-center border border-dashed border-outline-variant hover:border-primary-container transition-colors">
-                  <div class="absolute -top-3 left-3 bg-surface-container text-on-surface-variant font-code-sm text-code-sm px-2 py-0.5 rounded-full notranslate" translate="no">
-                    #2 Dialogue
-                  </div>
-                  <div class="font-body-md text-body-md font-semibold text-on-surface leading-snug">
-                    Chuyện gì đã<br/>xảy ra thế này?!
-                  </div>
-                </div>
-              </div>
-
-              <!-- OVERLAY 3: CENTER BACKGROUND SFX #3 -->
-              <div class="absolute top-[44%] right-[12%] z-10 group cursor-pointer" id="bubble-target-3">
-                <div class="relative px-3 py-1.5 flex flex-col items-center">
-                  <div class="absolute -top-3 right-0 bg-surface-container text-on-surface-variant font-code-sm text-code-sm px-2 py-0.2 rounded-full notranslate" translate="no">
-                    #3 SFX
-                  </div>
-                  <div class="font-headline-lg text-headline-lg font-bold tracking-tighter text-on-surface italic transform -rotate-6 select-none" style="text-shadow: -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff;">
-                    *RẦM RẦM*
-                  </div>
-                  <span class="font-code-sm text-code-sm text-outline-variant uppercase tracking-wider bg-surface-container-lowest/80 px-1 rounded -mt-1 notranslate" translate="no">[Explosion SFX]</span>
-                </div>
-              </div>
-
-              <!-- OVERLAY 4: NARRATION RECTANGLE #4 (Bottom-Right) -->
-              <div class="absolute bottom-[8%] right-[6%] left-[28%] z-10 group cursor-pointer" id="bubble-target-4">
-                <div class="relative bg-surface-container-lowest/95 rounded-md px-3.5 py-2.5 shadow-sm border border-dashed border-outline-variant hover:border-primary-container transition-colors">
-                  <div class="absolute -top-2.5 left-2 bg-surface-container text-on-surface-variant font-code-sm text-code-sm px-1.5 py-0.2 rounded notranslate" translate="no">
-                    #4 Narration Box
-                  </div>
-                  <p class="font-body-sm text-body-sm text-on-surface leading-normal text-left font-medium">
-                    Vào lúc đó, toàn bộ thành phố rung chuyển dữ dội dưới làn sương dày đặc.
-                  </p>
-                </div>
-              </div>
-
-            </div>
-
-            <!-- Floating Bottom Canvas Utility HUD -->
-            <div class="absolute bottom-4 inset-x-4 flex items-center justify-between pointer-events-none px-2">
-              <div class="pointer-events-auto inline-flex items-center gap-1 bg-surface-container-lowest/90 backdrop-blur-md px-2 py-1 rounded-full shadow-md text-on-surface border border-[#E4DFD6]">
-                <button onclick="zoomCanvas(-0.1)" aria-label="Zoom out" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors cursor-pointer" type="button">
-                  <span class="material-symbols-outlined text-[16px]">remove</span>
-                </button>
-                <span class="font-code-sm text-code-sm px-1 font-semibold" id="zoom-value-label">100%</span>
-                <button onclick="zoomCanvas(0.1)" aria-label="Zoom in" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors cursor-pointer" type="button">
-                  <span class="material-symbols-outlined text-[16px]">add</span>
-                </button>
-                <div class="w-px h-4 bg-outline-variant mx-1"></div>
-                <button onclick="resetZoom()" class="inline-flex items-center gap-1 px-2 py-1 rounded-full hover:bg-surface-container text-on-surface font-label-md text-label-md transition-colors cursor-pointer" type="button">
-                  <span class="material-symbols-outlined text-[15px]">fit_screen</span>
-                  <span class="hidden sm:inline">Fit</span>
-                </button>
-              </div>
-
-              <div class="pointer-events-auto inline-flex items-center gap-2 bg-surface-container-lowest/90 backdrop-blur-md px-2.5 py-1 rounded-full shadow-md border border-[#E4DFD6]">
-                <button class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-on-surface hover:bg-surface-container font-label-md text-label-md transition-colors cursor-pointer" type="button">
-                  <span class="material-symbols-outlined text-[16px]">grid_4x4</span>
-                  <span>Guides</span>
-                </button>
-                <button class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-primary font-label-md text-label-md font-semibold hover:bg-surface-container-high transition-colors cursor-pointer" type="button">
-                  <span class="material-symbols-outlined text-[16px]">auto_fix_high</span>
-                  <span>Re-inpaint Bubble</span>
-                </button>
-              </div>
+          <div class="relative w-full rounded-lg bg-inverse-surface p-4 flex items-center justify-center min-h-[640px] overflow-auto select-none">
+            <div class="relative inline-block shadow-2xl rounded-xs overflow-hidden" id="manga-sheet">
+              <img id="rendered-page-img" src="data:image/jpeg;base64,{rendered_b64}" alt="Rendered Vietnamese Manga Page" class="max-h-[620px] w-auto block select-none"/>
+              {click_hotspots_html}
             </div>
           </div>
         </div>
 
         <!-- RIGHT PANEL: Typography Inspector & Controls (col-span-5) -->
         <div class="lg:col-span-5 bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-space-md border border-[#E4DFD6]">
-          <!-- Panel Header -->
           <div class="flex items-center justify-between pb-2 border-b border-[#E4DFD6]">
-            <div class="flex flex-col">
-              <h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">Typography Settings</h2>
-              <span class="font-body-sm text-body-sm text-on-surface-variant">Lettering styling, kerning &amp; layout engine</span>
+            <div>
+              <h2 class="text-base font-bold text-on-surface">Dialogue &amp; Typography Inspector</h2>
+              <span class="text-xs text-on-surface-variant">Edit Vietnamese translation and re-burn into speech bubbles</span>
             </div>
-            <div class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary-fixed text-on-primary-fixed font-code-sm text-code-sm font-semibold notranslate" translate="no">
-              <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-              <span>Bubble #1 (Dialogue)</span>
+            <span id="active-bubble-badge" class="px-2.5 py-1 rounded-full bg-primary-fixed text-primary font-mono text-xs font-bold">
+              Bubble #1 / {total_bubbles}
+            </span>
+          </div>
+
+          <!-- Selector chọn nhanh bóng thoại -->
+          <div class="flex flex-col gap-1">
+            <label class="font-mono text-xs uppercase font-semibold text-on-surface-variant">Select Speech Bubble ({total_bubbles} detected)</label>
+            <select id="bubble-selector" onchange="selectBubble(parseInt(this.value))" class="w-full bg-surface-container-low text-on-surface text-xs font-semibold rounded-lg p-2.5 border border-[#E4DFD6] focus:outline-none focus:ring-2 focus:ring-primary-container cursor-pointer">
+              {bubble_options_html}
+            </select>
+          </div>
+
+          <!-- Raw Japanese Text (Read-only reference) -->
+          <div class="flex flex-col gap-1">
+            <label class="font-mono text-xs uppercase font-semibold text-on-surface-variant">Original Japanese (MangaOCR)</label>
+            <div id="ja-ref-box" class="w-full bg-surface-container-low rounded-lg px-3 py-2 text-xs font-medium text-on-surface-variant border border-[#E4DFD6] notranslate" translate="no">
+              ...
             </div>
           </div>
 
-          <!-- CONTROL 1: Translated Vietnamese Text Input -->
+          <!-- Translated Vietnamese Text Input -->
           <div class="flex flex-col gap-1.5">
             <div class="flex items-center justify-between">
-              <label class="font-code-sm text-code-sm uppercase tracking-wider font-semibold text-on-surface-variant" for="vn-text-editor">
-                Translated Vietnamese Text
+              <label class="font-mono text-xs uppercase font-semibold text-primary" for="vn-text-editor">
+                Translated Vietnamese Text (Editable)
               </label>
-              <span class="font-code-sm text-code-sm text-secondary font-medium">99.4% Match</span>
+              <span class="font-mono text-[11px] text-secondary font-semibold">Auto-Fit Distance Transform</span>
             </div>
-            <div class="relative">
-              <textarea class="w-full bg-surface-container-low rounded-lg p-3 font-body-md text-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary-container transition-all resize-none shadow-inner border border-transparent focus:border-[#E4DFD6]" id="vn-text-editor" placeholder="Enter translated dialogue..." rows="3">Thầy ơi, xin hãy đợi em với!</textarea>
-            </div>
-            <div class="flex items-center justify-between font-body-sm text-body-sm text-on-surface-variant">
-              <span class="inline-flex items-center gap-1">
-                <span class="material-symbols-outlined text-[14px] text-primary">auto_awesome</span>
-                <span class="notranslate" translate="no">Translated by Gemini 1.5 Pro</span>
-              </span>
-              <span class="text-outline">Term base: <strong class="text-on-surface notranslate" translate="no">Sensei → Thầy</strong></span>
-            </div>
+            <textarea oninput="updateCurrentBubbleText(this.value)" class="w-full bg-surface-container-low rounded-lg p-3 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary-container border border-[#E4DFD6]" id="vn-text-editor" rows="4" placeholder="Nhập lời thoại tiếng Việt..."></textarea>
           </div>
 
-          <!-- CONTROL 2: Font Family & Size Grid -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-space-sm">
-            <!-- Font Family Selector -->
-            <div class="flex flex-col gap-1.5">
-              <label class="font-code-sm text-code-sm uppercase tracking-wider font-semibold text-on-surface-variant" for="font-family-select">
-                Font Family
-              </label>
-              <div class="relative">
-                <select class="w-full appearance-none bg-surface-container-low text-on-surface font-title-md text-body-md rounded-lg py-2.5 pl-3 pr-8 focus:outline-none focus:ring-2 focus:ring-primary-container border border-transparent hover:border-[#E4DFD6] transition-all cursor-pointer" id="font-family-select">
-                  <option selected value="Plus Jakarta Sans">Plus Jakarta Sans (Default)</option>
-                  <option value="Sora">Sora Display</option>
-                  <option value="'CC Wild Words', sans-serif">CC Wild Words</option>
-                  <option value="'Anime Ace', sans-serif">Anime Ace Bold</option>
-                </select>
-                <span class="material-symbols-outlined absolute right-2.5 top-3 text-[18px] text-outline pointer-events-none">expand_more</span>
-              </div>
-            </div>
+          <!-- Nút Re-render trực tiếp lên trang truyện -->
+          <button onclick="saveAndRenderPage(0)" id="rerender-btn" class="w-full py-3 rounded-xl bg-secondary text-on-secondary hover:opacity-95 font-semibold text-xs shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98" type="button">
+            <span class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+            <span>Save Edits &amp; Re-Render Page Image Now</span>
+          </button>
 
-            <!-- Font Size Numerical Stepper -->
-            <div class="flex flex-col gap-1.5">
-              <label class="font-code-sm text-code-sm uppercase tracking-wider font-semibold text-on-surface-variant">
-                Font Size
-              </label>
-              <div class="flex items-center bg-surface-container-low rounded-lg p-1 border border-transparent hover:border-[#E4DFD6]">
-                <button class="w-8 h-8 rounded-md bg-surface-container hover:bg-surface-container-high text-on-surface flex items-center justify-center transition-colors cursor-pointer" id="font-dec" type="button">
-                  <span class="material-symbols-outlined text-[16px]">remove</span>
-                </button>
-                <div class="flex-1 text-center font-code-md text-code-md font-semibold text-on-surface" id="font-size-display">
-                  18 px
-                </div>
-                <button class="w-8 h-8 rounded-md bg-surface-container hover:bg-surface-container-high text-on-surface flex items-center justify-center transition-colors cursor-pointer" id="font-inc" type="button">
-                  <span class="material-symbols-outlined text-[16px]">add</span>
-                </button>
-              </div>
+          <div class="pt-2 border-t border-[#E4DFD6] text-xs text-on-surface-variant space-y-1">
+            <div class="flex items-center justify-between">
+              <span>Font Engine:</span>
+              <strong class="font-mono text-on-surface">HLcomic1_normal.ttf (Size 8–22px)</strong>
+            </div>
+            <div class="flex items-center justify-between">
+              <span>Inpainting Engine:</span>
+              <strong class="font-mono text-secondary">Topological Mask + OpenCV Telea</strong>
             </div>
           </div>
-
-          <!-- CONTROL 3: Text Alignment Segmented Control -->
-          <div class="flex flex-col gap-1.5">
-            <label class="font-code-sm text-code-sm uppercase tracking-wider font-semibold text-on-surface-variant">
-              Text Alignment &amp; Flow
-            </label>
-            <div class="grid grid-cols-3 gap-1 bg-surface-container-low p-1 rounded-lg">
-              <button onclick="setTextAlign('left')" id="btn-align-left" class="py-1.5 rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container flex items-center justify-center transition-all cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[18px]">format_align_left</span>
-              </button>
-              <button onclick="setTextAlign('center')" id="btn-align-center" class="py-1.5 rounded-md bg-primary-container text-on-primary flex items-center justify-center shadow-xs transition-all cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[18px]">format_align_center</span>
-              </button>
-              <button onclick="setTextAlign('right')" id="btn-align-right" class="py-1.5 rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container flex items-center justify-center transition-all cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[18px]">format_align_right</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- CONTROL 4: Sliders for Line Height & Kerning -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-space-md pt-1">
-            <!-- Line Height -->
-            <div class="flex flex-col gap-1.5">
-              <div class="flex items-center justify-between">
-                <span class="font-code-sm text-code-sm font-semibold text-on-surface-variant">Line Height</span>
-                <span class="font-code-sm text-code-sm px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-semibold" id="line-height-val">1.20x</span>
-              </div>
-              <input oninput="updateLineHeight(this.value)" class="w-full accent-primary h-1.5 bg-surface-container-high rounded-lg cursor-pointer" max="2.0" min="0.8" step="0.05" type="range" value="1.20"/>
-            </div>
-
-            <!-- Kerning / Letter Spacing -->
-            <div class="flex flex-col gap-1.5">
-              <div class="flex items-center justify-between">
-                <span class="font-code-sm text-code-sm font-semibold text-on-surface-variant">Letter Spacing</span>
-                <span class="font-code-sm text-code-sm px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-semibold" id="letter-spacing-val">+0.5 px</span>
-              </div>
-              <input oninput="updateLetterSpacing(this.value)" class="w-full accent-primary h-1.5 bg-surface-container-high rounded-lg cursor-pointer" max="4.0" min="-2.0" step="0.1" type="range" value="0.5"/>
-            </div>
-          </div>
-
-          <!-- CONTROL 5: Typographic Badges & Stroke Toggles -->
-          <div class="flex flex-col gap-2 pt-1">
-            <span class="font-code-sm text-code-sm uppercase tracking-wider font-semibold text-on-surface-variant">
-              Format Styles &amp; Readability
-            </span>
-            <div class="flex flex-wrap items-center gap-2">
-              <button onclick="toggleBold()" id="btn-bold" class="px-3.5 py-1.5 rounded-lg bg-primary-container text-on-primary font-code-md text-code-md font-bold shadow-xs cursor-pointer" type="button">
-                B
-              </button>
-              <button onclick="toggleItalic()" id="btn-italic" class="px-3.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-code-md text-code-md italic transition-colors cursor-pointer" type="button">
-                I
-              </button>
-              <label class="inline-flex items-center gap-2 ml-auto cursor-pointer select-none">
-                <input checked id="stroke-toggle" onchange="toggleStroke(this.checked)" class="sr-only peer" type="checkbox"/>
-                <span class="w-8 h-4.5 bg-surface-container-high rounded-full peer peer-checked:bg-secondary transition-colors relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:w-3.5 after:h-3.5 after:rounded-full after:transition-transform peer-checked:after:translate-x-3.5"></span>
-                <span class="font-body-sm text-body-sm text-on-surface font-medium">1.5px White Stroke</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Global Batch Application & Defaults -->
-          <div class="pt-2 flex flex-col gap-2 border-t border-[#E4DFD6]">
-            <label class="inline-flex items-center gap-2.5 cursor-pointer">
-              <input checked class="w-4 h-4 rounded text-primary focus:ring-primary accent-primary" type="checkbox"/>
-              <span class="font-body-sm text-body-sm text-on-surface font-medium">Apply this font style to all speech bubbles on Page 14</span>
-            </label>
-            <div class="flex items-center justify-between pt-1">
-              <button onclick="resetDefaults()" class="inline-flex items-center gap-1 font-body-sm text-body-sm text-primary hover:text-primary-container transition-colors font-medium cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[16px]">restart_alt</span>
-                <span>Reset to Auto-Fit Default</span>
-              </button>
-              <span class="font-code-sm text-code-sm text-outline">Auto-hyphenation: Enabled</span>
-            </div>
-          </div>
-
         </div>
 
       </div>
 
-      <!-- BOTTOM ACTION BAR: Batch Progress & Navigation Footer -->
+      <!-- BOTTOM ACTION BAR -->
       <div class="w-full bg-surface-container-lowest rounded-xl p-space-md shadow-sm mt-space-md flex flex-col sm:flex-row items-center justify-between gap-space-md border border-[#E4DFD6]">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+          <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-secondary">
             <span class="material-symbols-outlined text-[20px]">check</span>
           </div>
           <div class="flex flex-col">
-            <span class="font-title-md text-body-md font-semibold text-on-surface">Bubble 1 of 4 configured • Auto-typesetting applied</span>
-            <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-              <span>Unsaved changes: None (Autosynced to cloud)</span>
-            </span>
+            <span class="text-sm font-semibold text-on-surface">{total_bubbles} Speech Bubbles Configured on {page_filename}</span>
+            <span class="text-xs text-on-surface-variant">Output saved at: <code>data/rendered_pages/final_{page_filename}</code></span>
           </div>
         </div>
 
-        <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
-          <button onclick="navigateParent('review-studio')" class="inline-flex items-center justify-center px-6 h-11 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface font-title-md text-label-md font-semibold transition-all cursor-pointer border border-[#E4DFD6]" type="button">
-            <span class="material-symbols-outlined text-[18px] mr-1">arrow_back</span>
-            <span>Review Studio</span>
+        <div class="flex items-center gap-3">
+          <button onclick="navigateParent('review-studio?page_id={current_page_id}')" class="px-5 h-10 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold flex items-center gap-1.5 cursor-pointer border border-[#E4DFD6]" type="button">
+            <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+            <span>Back to Review Studio</span>
           </button>
-          <button onclick="navigateParent('queue-monitor')" class="inline-flex items-center justify-center px-8 h-11 rounded-full bg-primary-container hover:bg-primary text-on-primary font-title-md text-label-md font-bold shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer" type="button">
+          <button onclick="saveAndRenderPage(1)" class="px-7 h-10 rounded-full bg-primary-container hover:bg-primary text-on-primary text-xs font-bold shadow-md flex items-center gap-1.5 cursor-pointer" type="button">
             <span>Mark Page Complete &amp; View Queue</span>
-            <span class="material-symbols-outlined text-[18px] ml-1.5">arrow_forward</span>
+            <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
           </button>
         </div>
       </div>
@@ -646,172 +420,82 @@ tailwind.config = {{
 </div>
 
 <script>
-// Parent navigation bridge for seamless Streamlit router interaction
+const REGIONS = {regions_json};
+const RENDERED_B64 = "{rendered_b64}";
+const ORIG_B64 = "{orig_b64}";
+let currentIdx = 0;
+const editedTranslations = {{}};
+
+// Khởi tạo dữ liệu ban đầu
+REGIONS.forEach(r => {{
+  editedTranslations[r.id] = r.translated_text;
+}});
+
 function navigateParent(path) {{
-  const target = '/' + path.replace(/^\\//, '');
-  try {{
-    if (window.parent && window.parent.location) {{
-      window.parent.location.href = window.parent.location.origin + target;
-      return;
-    }}
-  }} catch (e) {{
-    console.warn("Cross-origin frame navigation fallback triggered:", e);
-  }}
-  window.location.href = target;
+  const targetUrl = window.location.origin + '/' + path.replace(/^\/+/, '');
+  const a = document.createElement('a');
+  a.href = targetUrl;
+  a.target = '_top';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }}
 
-// Interactive client behavior for Typesetting Editor
-const editor = document.getElementById('vn-text-editor');
-const canvasTarget = document.getElementById('canvas-text-1');
-const fontSizeDisplay = document.getElementById('font-size-display');
-const fontInc = document.getElementById('font-inc');
-const fontDec = document.getElementById('font-dec');
-const familySelect = document.getElementById('font-family-select');
+function selectBubble(idx) {{
+  if (!REGIONS || REGIONS.length === 0) return;
+  currentIdx = Math.max(0, Math.min(REGIONS.length - 1, idx));
+  const item = REGIONS[currentIdx];
 
-let currentSize = 18;
-let isBold = true;
-let isItalic = false;
+  const selector = document.getElementById('bubble-selector');
+  if (selector) selector.value = String(currentIdx);
 
-if (editor && canvasTarget) {{
-  editor.addEventListener('input', (e) => {{
-    const formatted = e.target.value.replace(/\\n/g, '<br/>');
-    canvasTarget.innerHTML = formatted || '...';
-  }});
-}}
+  const badge = document.getElementById('active-bubble-badge');
+  if (badge) badge.innerText = `Bubble #${{item.index}} / ${{REGIONS.length}}`;
 
-if (fontInc && fontSizeDisplay && canvasTarget) {{
-  fontInc.addEventListener('click', () => {{
-    if (currentSize < 36) {{
-      currentSize += 1;
-      fontSizeDisplay.textContent = currentSize + ' px';
-      canvasTarget.style.fontSize = currentSize + 'px';
-    }}
-  }});
-}}
+  const jaBox = document.getElementById('ja-ref-box');
+  if (jaBox) jaBox.innerText = item.original_text || '(Empty)';
 
-if (fontDec && fontSizeDisplay && canvasTarget) {{
-  fontDec.addEventListener('click', () => {{
-    if (currentSize > 10) {{
-      currentSize -= 1;
-      fontSizeDisplay.textContent = currentSize + ' px';
-      canvasTarget.style.fontSize = currentSize + 'px';
-    }}
-  }});
-}}
+  const editor = document.getElementById('vn-text-editor');
+  if (editor) editor.value = editedTranslations[item.id] !== undefined ? editedTranslations[item.id] : item.translated_text;
 
-if (familySelect && canvasTarget) {{
-  familySelect.addEventListener('change', (e) => {{
-    canvasTarget.style.fontFamily = e.target.value;
-  }});
-}}
-
-function setTextAlign(align) {{
-  if (canvasTarget) {{
-    canvasTarget.style.textAlign = align;
-  }}
-  ['left', 'center', 'right'].forEach(a => {{
-    const btn = document.getElementById('btn-align-' + a);
-    if (btn) {{
-      if (a === align) {{
-        btn.classList.add('bg-primary-container', 'text-on-primary', 'shadow-xs');
-        btn.classList.remove('text-on-surface-variant');
+  // Highlight hotspot trên ảnh
+  REGIONS.forEach((_, i) => {{
+    const hs = document.getElementById('hotspot-' + i);
+    if (hs) {{
+      if (i === currentIdx) {{
+        hs.classList.add('ring-4', 'ring-primary-container', 'bg-primary-container/20');
       }} else {{
-        btn.classList.remove('bg-primary-container', 'text-on-primary', 'shadow-xs');
-        btn.classList.add('text-on-surface-variant');
+        hs.classList.remove('ring-4', 'ring-primary-container', 'bg-primary-container/20');
       }}
     }}
   }});
 }}
 
-function updateLineHeight(val) {{
-  const label = document.getElementById('line-height-val');
-  if (label) label.innerText = parseFloat(val).toFixed(2) + 'x';
-  if (canvasTarget) canvasTarget.style.lineHeight = val;
+function updateCurrentBubbleText(val) {{
+  if (!REGIONS || REGIONS.length === 0) return;
+  const item = REGIONS[currentIdx];
+  editedTranslations[item.id] = val;
 }}
 
-function updateLetterSpacing(val) {{
-  const label = document.getElementById('letter-spacing-val');
-  if (label) label.innerText = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(1) + ' px';
-  if (canvasTarget) canvasTarget.style.letterSpacing = val + 'px';
+function toggleOriginalImage(showOrig) {{
+  const img = document.getElementById('rendered-page-img');
+  if (!img) return;
+  img.src = 'data:image/jpeg;base64,' + (showOrig ? ORIG_B64 : RENDERED_B64);
 }}
 
-function toggleBold() {{
-  isBold = !isBold;
-  const btn = document.getElementById('btn-bold');
-  if (canvasTarget) canvasTarget.style.fontWeight = isBold ? 'bold' : 'normal';
+function saveAndRenderPage(goQueue) {{
+  const btn = document.getElementById('rerender-btn');
   if (btn) {{
-    if (isBold) {{
-      btn.classList.add('bg-primary-container', 'text-on-primary');
-      btn.classList.remove('bg-surface-container', 'text-on-surface');
-    }} else {{
-      btn.classList.remove('bg-primary-container', 'text-on-primary');
-      btn.classList.add('bg-surface-container', 'text-on-surface');
-    }}
+    btn.innerHTML = `<span class="material-symbols-outlined animate-spin text-[18px]">sync</span><span>Re-rendering Vietnamese Typography...</span>`;
   }}
+  const encoded = encodeURIComponent(JSON.stringify(editedTranslations));
+  const proj = encodeURIComponent('{project_name}');
+  navigateParent(`typesetting?project=${{proj}}&page_id={current_page_id}&save_typeset=1&go_queue=${{goQueue}}&updates=${{encoded}}`);
 }}
 
-function toggleItalic() {{
-  isItalic = !isItalic;
-  const btn = document.getElementById('btn-italic');
-  if (canvasTarget) canvasTarget.style.fontStyle = isItalic ? 'italic' : 'normal';
-  if (btn) {{
-    if (isItalic) {{
-      btn.classList.add('bg-primary-container', 'text-on-primary');
-      btn.classList.remove('bg-surface-container', 'text-on-surface');
-    }} else {{
-      btn.classList.remove('bg-primary-container', 'text-on-primary');
-      btn.classList.add('bg-surface-container', 'text-on-surface');
-    }}
-  }}
-}}
-
-function toggleStroke(checked) {{
-  if (canvasTarget) {{
-    canvasTarget.style.textShadow = checked ? '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff' : 'none';
-  }}
-}}
-
-function resetDefaults() {{
-  currentSize = 18;
-  if (fontSizeDisplay) fontSizeDisplay.textContent = '18 px';
-  if (canvasTarget) {{
-    canvasTarget.style.fontSize = '18px';
-    canvasTarget.style.fontFamily = 'Plus Jakarta Sans';
-    canvasTarget.style.textAlign = 'center';
-    canvasTarget.style.lineHeight = '1.2';
-    canvasTarget.style.letterSpacing = '0.5px';
-    canvasTarget.style.fontWeight = 'bold';
-    canvasTarget.style.fontStyle = 'normal';
-  }}
-  setTextAlign('center');
-}}
-
-// Page navigation
-let currentPage = 14;
-const totalPages = 24;
-function changePage(delta) {{
-  currentPage = Math.max(1, Math.min(totalPages, currentPage + delta));
-  const display = document.getElementById('pagination-display');
-  const headerDisplay = document.getElementById('header-page-label');
-  if (display) display.innerText = 'Page ' + currentPage + ' of ' + totalPages;
-  if (headerDisplay) headerDisplay.innerText = 'Page ' + currentPage;
-}}
-
-let zoomLevel = 1.0;
-function zoomCanvas(delta) {{
-  zoomLevel = Math.max(0.7, Math.min(1.5, zoomLevel + delta));
-  const sheet = document.getElementById('manga-sheet');
-  const label = document.getElementById('zoom-value-label');
-  if (sheet) sheet.style.transform = `scale(${{zoomLevel}})`;
-  if (label) label.innerText = Math.round(zoomLevel * 100) + '%';
-}}
-
-function resetZoom() {{
-  zoomLevel = 1.0;
-  const sheet = document.getElementById('manga-sheet');
-  const label = document.getElementById('zoom-value-label');
-  if (sheet) sheet.style.transform = 'scale(1)';
-  if (label) label.innerText = '100%';
+// Mặc định chọn Bubble #1 khi mở trang
+if (REGIONS.length > 0) {{
+  selectBubble(0);
 }}
 </script>
 
@@ -819,5 +503,4 @@ function resetZoom() {{
 </html>
 """
 
-# Render the Google Stitch component seamlessly
 components.html(typesetting_html, height=1150, scrolling=True)
