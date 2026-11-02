@@ -9,7 +9,14 @@ Includes full Vietnamese Unicode font support with fallback metrics to ensure Go
 import streamlit as st
 import streamlit.components.v1 as components
 
+from components.evaluation import render_accuracy_panel
+from models.evaluation import EvaluationStatus
+from services.evaluation_service import get_evaluation_service
 from utils.auth_session import require_auth
+
+
+def _format_metric(value: float) -> str:
+    return f"{value * 100:.1f}"
 
 
 # Enforce authentication guard
@@ -19,6 +26,18 @@ user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 user_name = user.full_name or "Phan Van Quan"
 project_name = st.query_params.get("project", "Shonen Weekly #112")
 file_safe_project = project_name.replace(" ", "_").replace("#", "")
+
+evaluation_state_value = st.query_params.get("evaluation", "completed")
+try:
+    evaluation_state = EvaluationStatus(evaluation_state_value)
+except ValueError:
+    evaluation_state = EvaluationStatus.COMPLETED
+evaluation_result = get_evaluation_service().get_result(project_name, evaluation_state)
+accuracy_panel_html = render_accuracy_panel(evaluation_result)
+evaluation_map50 = evaluation_result.yolo.map50 if evaluation_result.yolo else 0.0
+evaluation_ocr_accuracy = (
+    evaluation_result.ocr.character_accuracy if evaluation_result.ocr else 0.0
+)
 
 # Dynamic project context mapping to ensure 100% data consistency with Workspace (Task 2)
 project_lower = project_name.lower()
@@ -83,6 +102,28 @@ queue_monitor_html = f"""<!DOCTYPE html>
   body {{ overscroll-behavior: none; }}
   main > :first-child {{ margin-top: 0 !important; }}
   main > :last-child {{ margin-bottom: 0 !important; }}
+}}
+
+/* Keep navigation and header anchored while only the iframe document scrolls. */
+#app-sidebar {{
+  position: fixed !important;
+  inset: 0 auto 0 0 !important;
+  width: 220px !important;
+  height: 100dvh !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  z-index: 50 !important;
+}}
+#app-header {{
+  position: fixed !important;
+  top: 0 !important;
+  left: 220px !important;
+  right: 0 !important;
+  z-index: 40 !important;
+}}
+#app-shell {{
+  padding-left: 220px !important;
+  min-width: 0;
 }}
 
 /* Google Translate DOM Injection Compatibility Fixes:
@@ -231,12 +272,44 @@ tailwind.config = {{
   }}
 }};
 </script>
+<script>
+// Queue Monitor is a full application shell; pin its Streamlit iframe to the browser viewport.
+function mountQueueMonitorViewport() {{
+  try {{
+    const frame = window.frameElement;
+    if (!frame) return;
+
+    const host = frame.parentElement;
+    if (host) {{
+      host.style.position = 'fixed';
+      host.style.inset = '0';
+      host.style.width = '100vw';
+      host.style.height = '100vh';
+      host.style.margin = '0';
+      host.style.padding = '0';
+      host.style.zIndex = '2147483000';
+      host.style.background = '#fff8f3';
+    }}
+
+    frame.style.position = 'absolute';
+    frame.style.inset = '0';
+    frame.style.width = '100%';
+    frame.style.height = '100%';
+    frame.style.border = '0';
+  }} catch (error) {{
+    // The fixed-height component below remains a safe fallback.
+  }}
+}}
+
+mountQueueMonitorViewport();
+window.addEventListener('load', mountQueueMonitorViewport);
+</script>
 </head>
 
 <body class="bg-surface font-body-md text-on-surface antialiased">
 
 <!-- FIXED LEFT SIDEBAR -->
-<aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between py-5 border-r border-[#E4DFD6]">
+<aside id="app-sidebar" class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between py-5 border-r border-[#E4DFD6]">
   <div>
     <!-- Brand / Logo Area: Square Badge with 'A' (Mục 1 - Đồng bộ 100% Task 2) -->
     <div class="px-5 mb-6 flex items-center gap-3">
@@ -300,10 +373,10 @@ tailwind.config = {{
 </aside>
 
 <!-- MAIN APP SHELL -->
-<div class="pl-[220px]">
+<div id="app-shell" class="pl-[220px]">
 
   <!-- TOP HEADER BAR (SaaS Pro with Notification & Profile Dropdown) -->
-  <header class="fixed top-0 left-[220px] right-0 h-16 bg-surface-container-lowest/95 backdrop-blur-md z-40 px-8 flex items-center justify-between border-b border-[#E4DFD6]">
+  <header id="app-header" class="fixed top-0 left-[220px] right-0 h-16 bg-surface-container-lowest/95 backdrop-blur-md z-40 px-8 flex items-center justify-between border-b border-[#E4DFD6]">
     
     <!-- Left: ACL Studio / Projects / {project_name} / Queue Monitor Breadcrumb -->
     <div class="flex items-center gap-2">
@@ -961,6 +1034,9 @@ tailwind.config = {{
             </div>
           </div>
         </div>
+
+        <!-- Frontend Accuracy Evaluation (mock adapter until backend API is available) -->
+        {accuracy_panel_html}
 
         <!-- Completed Chapter Artifacts Table (Matching Demo Image 3) -->
         <div id="completed-artifacts-section" class="bg-surface-container-lowest rounded-2xl border border-outline-variant/50 overflow-hidden shadow-sm mt-6">
@@ -1629,6 +1705,35 @@ function simulateJobProgress() {{
   }}
 }}
 
+// Frontend-only evaluation preview. Backend integration will replace this timer.
+function simulateAccuracyEvaluation() {{
+  const results = document.getElementById('evaluation-results');
+  const loading = document.getElementById('evaluation-loading');
+  const status = document.getElementById('evaluation-status');
+  if (!results || !loading) {{
+    showToast('Accuracy evaluation queued. Preview data will appear when ready.');
+    return;
+  }}
+
+  results.classList.add('hidden');
+  loading.classList.remove('hidden');
+  if (status) {{
+    status.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-fixed text-primary-container font-code text-xs font-semibold';
+    status.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">progress_activity</span> Evaluating';
+  }}
+  showToast('Running mock YOLO and OCR accuracy evaluation...');
+
+  setTimeout(() => {{
+    loading.classList.add('hidden');
+    results.classList.remove('hidden');
+    if (status) {{
+      status.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container/60 text-secondary font-code text-xs font-semibold';
+      status.innerHTML = '<span class="material-symbols-outlined text-[15px]">verified</span> Completed';
+    }}
+    showToast('Evaluation complete: YOLO mAP@0.5 {_format_metric(evaluation_map50)}% · OCR accuracy {_format_metric(evaluation_ocr_accuracy)}%');
+  }}, 1400);
+}}
+
 // Download ZIP action
 function downloadZipArchive() {{
   const blob = new Blob(["ACL Production Chapter Export: {project_name}\\nLocalizer: ACL v2.4\\nPages: 24/24\\nLanguage: JA -> VI\\nStatus: Verified Complete"], {{ type: 'application/zip' }});
@@ -1652,8 +1757,8 @@ Batch ID: {batch_code}
 Total Pages: {total_pages}
 Pipeline Stages:
 1. Ingestion: Complete ({total_pages}/{total_pages})
-2. YOLOv8 Text Detection: Complete ({total_pages}/{total_pages}) - mAP 0.942
-3. Manga OCR v2.1: Complete ({total_pages}/{total_pages}) - Zero retries
+2. YOLOv8 Text Detection: Complete ({total_pages}/{total_pages}) - mAP@0.5 {_format_metric(evaluation_map50)}%
+3. Manga OCR v2.1: Complete ({total_pages}/{total_pages}) - Character Accuracy {_format_metric(evaluation_ocr_accuracy)}%
 4. Human Interactive Review: Signed off by Lead Editor
 5. LaMa GAN Inpainting: Complete ({total_pages}/{total_pages})
 6. Typography & Typesetting: Complete ({total_pages}/{total_pages}) - CC Wild Words
@@ -1887,4 +1992,4 @@ function downloadIdmlPackage() {{
 """
 
 # Render the Google Stitch component seamlessly
-components.html(queue_monitor_html, height=1200, scrolling=True)
+components.html(queue_monitor_html, height=1000, scrolling=True)
