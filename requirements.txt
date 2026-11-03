@@ -101,7 +101,10 @@ xgboost==3.2.0
 xlsxwriter==3.2.9
 ultralytics==8.2.0
 manga-ocr
-google-generativeai
+google-genai==2.33.0
+deep-translator==1.11.4
+torch==2.5.1
+torchvision==0.20.1
 openai
 python-dotenv
 transformers==4.41.2
