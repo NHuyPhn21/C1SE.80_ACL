@@ -1,8 +1,12 @@
 import os
 import json
 import time
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 from dotenv import load_dotenv
 from backend.database import SessionLocal
 from backend.models import TextRegion
@@ -11,7 +15,7 @@ load_dotenv()
 
 # Khởi tạo Client theo chuẩn Google GenAI SDK mới
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+client = genai.Client(api_key=GEMINI_API_KEY) if (genai and GEMINI_API_KEY) else None
 
 
 def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
