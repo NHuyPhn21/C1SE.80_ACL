@@ -690,3 +690,4 @@ if (startBtn) {{
 
 # Render the Google Stitch component seamlessly
 components.html(chapter_studio_html, height=1150, scrolling=True)
+

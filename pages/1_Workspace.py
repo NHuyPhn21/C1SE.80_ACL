@@ -930,3 +930,4 @@ if (form) {{
 
 # Render the Google Stitch component seamlessly
 components.html(workspace_html, height=1050, scrolling=True)
+
