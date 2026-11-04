@@ -69,8 +69,18 @@ if create_title:
     st.query_params.pop("create_desc", None)
     st.rerun()
 
-# Query real projects from SQLite database (NO mock seed data)
-projects = db.query(Project).order_by(Project.id.asc()).all()
+# Query real projects for the authenticated user from SQLite database (NO mock seed data)
+workspace_svc = WorkspaceService(session_factory=SessionLocal, initialize_database=False)
+user_summaries = workspace_svc.list_projects(db_user.id)
+user_proj_ids = [s.id for s in user_summaries]
+projects = (
+    db.query(Project)
+    .filter(Project.id.in_(user_proj_ids))
+    .order_by(Project.id.asc())
+    .all()
+    if user_proj_ids
+    else []
+)
 active_projects_count = len(projects)
 
 # Calculate real storage usage from data folder
@@ -301,7 +311,7 @@ font {{
     </nav>
   </div>
 
-  <!-- Sidebar Footer: Documentation & Core Online -->
+  <!-- Sidebar Footer: Documentation, Core Online & Sign Out -->
   <div class="px-5 pt-3 border-t border-[#E4DFD6] flex flex-col gap-2.5">
     <a class="flex items-center gap-2 text-on-surface-variant hover:text-on-surface text-xs font-medium cursor-pointer transition-colors" onclick="alert('ACL Documentation v2.4: System guides, Manga-OCR pipelines, and API specs.')">
       <span class="material-symbols-outlined text-[18px]">help_outline</span>
@@ -311,6 +321,10 @@ font {{
       <span class="w-2 h-2 rounded-full bg-[#2E7D32] animate-pulse"></span>
       <span>Core • Online</span>
     </div>
+    <a class="flex items-center gap-2 text-[#BA1A1A] hover:bg-[#FFDAD6]/40 px-2.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all mt-1" onclick="navigateParent('login?logout=1')" title="Sign out of ACL Studio">
+      <span class="material-symbols-outlined text-[18px] text-[#BA1A1A]">logout</span>
+      <span>Sign Out</span>
+    </a>
   </div>
 </aside>
 
@@ -400,6 +414,11 @@ font {{
             <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('team-roles')">
               <span class="material-symbols-outlined text-[18px]">groups</span>
               <span>Team Workspace</span>
+            </a>
+            <div class="border-t border-[#E4DFD6]/70 my-1"></div>
+            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#BA1A1A] hover:bg-[#FFDAD6]/40 transition-colors cursor-pointer" onclick="navigateParent('login?logout=1')">
+              <span class="material-symbols-outlined text-[18px] text-[#BA1A1A]">logout</span>
+              <span>Sign Out</span>
             </a>
           </div>
         </div>

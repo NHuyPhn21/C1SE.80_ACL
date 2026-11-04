@@ -356,7 +356,7 @@ font {{
     </nav>
   </div>
 
-  <!-- Sidebar Footer -->
+  <!-- Sidebar Footer: Documentation, Core Online & Sign Out -->
   <div class="px-5 pt-3 border-t border-[#E4DFD6] flex flex-col gap-2.5">
     <a class="flex items-center gap-2 text-on-surface-variant hover:text-on-surface text-xs font-medium cursor-pointer transition-colors" onclick="alert('ACL Documentation v2.4: System guides and RBAC specs.')">
       <span class="material-symbols-outlined text-[18px]">help_outline</span>
@@ -366,6 +366,10 @@ font {{
       <span class="w-2 h-2 rounded-full bg-[#2E7D32] animate-pulse"></span>
       <span>Core • Online</span>
     </div>
+    <a class="flex items-center gap-2 text-[#BA1A1A] hover:bg-[#FFDAD6]/40 px-2.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all mt-1" onclick="navigateParent('login?logout=1')" title="Sign out of ACL Studio">
+      <span class="material-symbols-outlined text-[18px] text-[#BA1A1A]">logout</span>
+      <span>Sign Out</span>
+    </a>
   </div>
 </aside>
 
@@ -406,10 +410,14 @@ font {{
       </div>
 
       <!-- User Profile Menu -->
-      <div class="relative pl-2 border-l border-[#E4DFD6]">
+      <div class="relative pl-2 border-l border-[#E4DFD6] flex items-center gap-3">
         <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center font-bold text-xs text-on-primary shadow-sm notranslate" translate="no" title="{escape(user_name)}">
           {user_initials}
         </div>
+        <a class="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-[#BA1A1A] hover:bg-[#FFDAD6]/40 px-2.5 py-1 rounded-lg cursor-pointer transition-all" onclick="navigateParent('login?logout=1')" title="Sign out of ACL Studio">
+          <span class="material-symbols-outlined text-[16px]">logout</span>
+          <span>Sign Out</span>
+        </a>
       </div>
     </div>
   </header>
