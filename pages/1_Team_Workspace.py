@@ -404,7 +404,7 @@ font {{
 
       <!-- Notification Bell -->
       <div class="relative">
-        <button class="relative p-1.5 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" title="Notifications">
+        <button onclick="alert('No new unread team notifications.')" class="relative p-1.5 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" title="Notifications">
           <span class="material-symbols-outlined text-[22px]">notifications</span>
         </button>
       </div>

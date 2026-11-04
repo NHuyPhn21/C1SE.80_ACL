@@ -328,13 +328,13 @@ font {{
         <input class="bg-transparent text-xs outline-none placeholder:text-on-surface-variant w-44 text-on-surface" placeholder="Search tasks (e.g. 13, OCR)..." type="text"/>
       </div>
 
-      <a class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="Local Pipeline Daemon Context">
+      <a onclick="alert('AI Daemon Tokyo-01: Status ONLINE, GPU VRAM 16GB, Idle.')" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="AI Daemon Status">
         <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
         <span>Node Tokyo-01 (GPU idle)</span>
       </a>
 
       <!-- Notification Bell -->
-      <button class="p-1.5 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" title="Notifications">
+      <button onclick="alert('No new system queue notifications.')" class="p-1.5 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" title="Notifications">
         <span class="material-symbols-outlined text-[22px]">notifications</span>
       </button>
 

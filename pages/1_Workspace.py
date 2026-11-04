@@ -156,7 +156,7 @@ for idx, p in enumerate(projects, start=1):
     <div class="project-card bg-surface-container-lowest rounded-2xl p-6 border border-[#E4DFD6] shadow-sm hover:shadow-md transition-all flex flex-col justify-between min-h-[270px]" data-title="{escape(p.title.lower())}">
       <div>
         <div class="flex items-center justify-between mb-1">
-          <h3 class="font-headline text-lg font-bold text-on-surface">{escape(p.title)}</h3>
+          <h3 class="font-headline text-lg font-bold text-on-surface hover:text-primary-container cursor-pointer transition-colors" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{escape(p.title)}'))" title="Open Chapter Studio for {escape(p.title)}">{escape(p.title)}</h3>
           <span class="px-2 py-0.5 rounded-full border border-[#C4C7C5] text-xs text-[#5A5E62] flex items-center justify-center font-medium font-code">{num_str}</span>
         </div>
         <p class="text-xs text-on-surface-variant font-medium">{escape(p.description or '0 pages • Japanese ➔ Vietnamese')}</p>
@@ -351,7 +351,7 @@ font {{
       </div>
 
       <!-- Node Tokyo-01 Status Badge -->
-      <a class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="Local Pipeline Daemon Context">
+      <a class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" onclick="navigateParent('queue-monitor')" title="Inspect Node Tokyo-01 in Queue Monitor">
         <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
         <span>Node Tokyo-01 (GPU idle)</span>
       </a>
