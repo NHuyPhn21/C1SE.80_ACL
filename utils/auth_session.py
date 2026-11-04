@@ -70,7 +70,7 @@ def require_auth() -> User:
     user = current_user()
     if user is None:
         import os
-        mode = os.getenv("AUTH_BACKEND_MODE", "mock").strip().lower()
+        mode = os.getenv("AUTH_BACKEND_MODE", "sqlite").strip().lower()
         if mode == "mock" and not st.session_state.get("auth.logged_out", False):
             try:
                 auth_svc = get_auth_service()

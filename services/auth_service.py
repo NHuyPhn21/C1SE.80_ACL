@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import secrets
+import hashlib
+import hmac
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import lru_cache
@@ -15,6 +17,8 @@ from dotenv import load_dotenv
 from models.auth import AuthResult, AuthTokens, User
 from models.api_error import ApiError
 from services.error_handler import from_exception, from_http_response
+from backend.database import SessionLocal, init_db
+from backend.models import User as DatabaseUser
 
 
 load_dotenv()
@@ -208,14 +212,88 @@ class MockAuthService(AuthService):
         return _mock_tokens()
 
 
+class SqliteAuthService(AuthService):
+    """Authenticate local Streamlit users against the ``users`` table."""
+
+    def __init__(self, session_factory=SessionLocal, *, initialize_database: bool = True) -> None:
+        if initialize_database:
+            init_db()
+        self.session_factory = session_factory
+
+    def login(self, email: str, password: str, remember_me: bool) -> AuthResult:
+        del remember_me
+        _validate_credentials(email, password)
+        normalized_email = email.strip().lower()
+        db = self.session_factory()
+        try:
+            user = (
+                db.query(DatabaseUser)
+                .filter(DatabaseUser.email.ilike(normalized_email))
+                .first()
+            )
+            if user is None or not verify_password(password, user.password_hash):
+                raise AuthServiceError("Invalid email or password.")
+            return _database_result(user)
+        finally:
+            db.close()
+
+    def register(self, full_name: str, email: str, password: str) -> AuthResult:
+        _validate_credentials(email, password)
+        normalized_email = email.strip().lower()
+        normalized_name = full_name.strip()
+        if not normalized_name:
+            raise AuthServiceError("Full name is required.")
+
+        db = self.session_factory()
+        try:
+            existing = (
+                db.query(DatabaseUser)
+                .filter(DatabaseUser.email.ilike(normalized_email))
+                .first()
+            )
+            if existing is not None:
+                raise AuthServiceError("This email address is already registered.")
+
+            user = DatabaseUser(
+                username=normalized_name,
+                email=normalized_email,
+                password_hash=hash_password(password),
+                role="USER",
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            return _database_result(user)
+        except AuthServiceError:
+            db.rollback()
+            raise
+        except Exception as exc:
+            db.rollback()
+            raise AuthServiceError("Unable to create the account.") from exc
+        finally:
+            db.close()
+
+    def logout(self, access_token: str) -> None:
+        del access_token
+
+    def refresh(self, refresh_token: str) -> AuthTokens:
+        if not refresh_token:
+            raise AuthServiceError("Your session has expired. Please sign in again.")
+        return _local_tokens()
+
+
 @lru_cache(maxsize=1)
 def get_auth_service() -> AuthService:
     """Return the configured adapter without coupling pages to its transport."""
-    mode = os.getenv("AUTH_BACKEND_MODE", "mock").strip().lower()
+    mode = os.getenv("AUTH_BACKEND_MODE", "sqlite").strip().lower()
+    if mode == "sqlite":
+        return SqliteAuthService()
     if mode == "mock":
         return MockAuthService()
     if mode != "api":
-        raise AuthServiceError("AUTH_BACKEND_MODE must be either 'mock' or 'api'.")
+        raise AuthServiceError(
+            "AUTH_BACKEND_MODE must be 'sqlite', 'mock', or 'api'."
+        )
 
     return HttpAuthService(config=AuthApiConfig.from_environment())
 
@@ -273,5 +351,48 @@ def _mock_tokens() -> AuthTokens:
     return AuthTokens(
         access_token=f"mock_access_{secrets.token_urlsafe(24)}",
         refresh_token=f"mock_refresh_{secrets.token_urlsafe(24)}",
+        expires_in=3600,
+    )
+
+
+def hash_password(password: str, *, iterations: int = 310_000) -> str:
+    """Create a salted PBKDF2-SHA256 password hash using only the standard library."""
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, encoded_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt_hex, expected_hex = encoded_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        actual = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode(),
+            bytes.fromhex(salt_hex),
+            int(iterations_text),
+        )
+        return hmac.compare_digest(actual, bytes.fromhex(expected_hex))
+    except (TypeError, ValueError):
+        return False
+
+
+def _database_result(user: DatabaseUser) -> AuthResult:
+    return AuthResult(
+        user=User(
+            id=str(user.id),
+            email=user.email,
+            full_name=user.username,
+            role=user.role.lower(),
+        ),
+        tokens=_local_tokens(),
+    )
+
+
+def _local_tokens() -> AuthTokens:
+    return AuthTokens(
+        access_token=f"local_access_{secrets.token_urlsafe(24)}",
+        refresh_token=f"local_refresh_{secrets.token_urlsafe(24)}",
         expires_in=3600,
     )
