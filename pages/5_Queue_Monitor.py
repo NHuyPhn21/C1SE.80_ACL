@@ -607,11 +607,24 @@ font {{
         </div>
 
         <!-- Table Footer Bar -->
-        <div class="px-6 py-3 bg-surface-container-low border-t border-[#E4DFD6] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-on-surface-variant font-code">
+        <div class="px-6 py-3.5 bg-surface-container-low border-t border-[#E4DFD6] flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-on-surface-variant font-code">
           <div class="flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-secondary"></span>
-            <span>Displaying {total_pages} queue pipeline execution units • Project: <strong>{escape(project_name)}</strong></span>
+            <span>Displaying {total_pages} execution units • Project: <strong>{escape(project_name)}</strong></span>
           </div>
+          
+          <!-- Table Pagination Component (Click to Page 1, 2...) -->
+          <div class="flex items-center gap-1 font-sans select-none">
+            <button type="button" class="w-7 h-7 rounded-lg border border-[#D0D7DE] bg-white flex items-center justify-center text-xs text-on-surface-variant hover:bg-surface-container disabled:opacity-40 cursor-pointer transition-all" title="Previous Page" onclick="changeQueueTablePage(-1)">
+              <span class="material-symbols-outlined text-[16px]">chevron_left</span>
+            </button>
+            <button type="button" id="queue-page-1" onclick="setQueueTablePage(1)" class="w-7 h-7 rounded-lg bg-primary-container text-on-primary font-bold text-xs flex items-center justify-center shadow-sm transition-all cursor-pointer">1</button>
+            <button type="button" id="queue-page-2" onclick="setQueueTablePage(2)" class="w-7 h-7 rounded-lg border border-[#D0D7DE] bg-white hover:bg-surface-container text-xs text-on-surface font-semibold flex items-center justify-center transition-all cursor-pointer">2</button>
+            <button type="button" class="w-7 h-7 rounded-lg border border-[#D0D7DE] bg-white flex items-center justify-center text-xs text-on-surface-variant hover:bg-surface-container cursor-pointer transition-all" title="Next Page" onclick="changeQueueTablePage(1)">
+              <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+            </button>
+          </div>
+
           {download_block}
         </div>
       </div>
@@ -736,6 +749,49 @@ function filterQueueTasks(status, btn) {{
       emptyFilterRow.style.display = 'none';
     }}
   }}
+}}
+
+let currentQueuePage = 1;
+function setQueueTablePage(page) {{
+  const p1 = document.getElementById('queue-page-1');
+  const p2 = document.getElementById('queue-page-2');
+  const rows = document.querySelectorAll('.task-row');
+
+  if (rows.length === 0) {{
+    if (page === 2) {{
+      alert('Dự án \"{escape(project_name)}\" hiện chưa có đủ tác vụ để chuyển sang trang 2.\\n\\nKhi bạn tải nhiều trang truyện lên ở Chapter Studio (từ 10 trang trở lên), hệ thống sẽ tự động phân trang 1, 2, 3... nhé!');
+      return;
+    }}
+  }}
+
+  currentQueuePage = page;
+  if (page === 1) {{
+    if (p1) {{ p1.className = 'w-7 h-7 rounded-lg bg-primary-container text-on-primary font-bold text-xs flex items-center justify-center shadow-sm transition-all cursor-pointer'; }}
+    if (p2) {{ p2.className = 'w-7 h-7 rounded-lg border border-[#D0D7DE] bg-white hover:bg-surface-container text-xs text-on-surface font-semibold flex items-center justify-center transition-all cursor-pointer'; }}
+  }} else {{
+    if (p2) {{ p2.className = 'w-7 h-7 rounded-lg bg-primary-container text-on-primary font-bold text-xs flex items-center justify-center shadow-sm transition-all cursor-pointer'; }}
+    if (p1) {{ p1.className = 'w-7 h-7 rounded-lg border border-[#D0D7DE] bg-white hover:bg-surface-container text-xs text-on-surface font-semibold flex items-center justify-center transition-all cursor-pointer'; }}
+  }}
+
+  if (rows.length > 0) {{
+    const pageSize = 10;
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    rows.forEach((r, idx) => {{
+      if (idx >= start && idx < end) {{
+        r.style.display = '';
+      }} else {{
+        r.style.display = 'none';
+      }}
+    }});
+  }}
+}}
+
+function changeQueueTablePage(delta) {{
+  let target = currentQueuePage + delta;
+  if (target < 1) target = 1;
+  if (target > 2) target = 2;
+  setQueueTablePage(target);
 }}
 </script>
 </body>
