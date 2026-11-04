@@ -12,12 +12,10 @@ from utils.auth_session import require_auth
 from backend.database import SessionLocal
 from backend.models import ComicPage, TextRegion
 from backend.image_utils import (
-    BASE_DIR,
     resolve_project_path,
-    process_comic_page,
     _deduplicate_db_regions,
 )
-from ai_core.translator import translate_manga_text
+from services.review_service import ReviewServiceError, save_ocr_and_retranslate
 from utils.page_navigation import render_page_navigation
 
 user = require_auth()
@@ -86,6 +84,14 @@ st.markdown(
         border-radius: 12px;
         padding: 12px 16px;
         margin-bottom: 12px;
+    }
+    .bubble-card, .bubble-card-warning {
+        transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+    }
+    .bubble-card-selected {
+        border: 2px solid #25326F;
+        box-shadow: 0 8px 24px rgba(37,50,111,.14);
+        transform: translateY(-1px);
     }
 
     .badge-verified {
@@ -161,39 +167,16 @@ try:
         if not clean_regs and raw_regs:
             clean_regs = raw_regs
 
-        # Vẽ bounding box lên ảnh gốc (Cột trái Figma)
-        if os.path.exists(orig_real_path):
-            img_bgr = cv2.imread(orig_real_path)
-            for idx, r in enumerate(clean_regs, start=1):
-                bbox = json.loads(r.bbox_json)
-                x1, y1, x2, y2 = map(int, bbox[:4])
-                
-                # Màu sắc: Vàng đất cho Sound Effect (#3 trong Figma), Xanh navy cho thoại thường
-                box_color = (40, 110, 210) if idx == 3 else (111, 50, 37)
-                cv2.rectangle(img_bgr, (x1, y1), (x2, y2), box_color, 3)
-
-                # Vẽ nhãn số thứ tự tròn
-                cv2.circle(img_bgr, (x1 + 18, y1 + 18), 16, box_color, -1)
-                cv2.putText(
-                    img_bgr,
-                    str(idx),
-                    (x1 + 10, y1 + 25),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    (255, 255, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
-
-                regions_data.append({
+        for idx, r in enumerate(clean_regs, start=1):
+            bbox = json.loads(r.bbox_json)
+            x1, y1, x2, y2 = map(int, bbox[:4])
+            regions_data.append({
                     "id": r.id,
                     "index": idx,
                     "bbox": [x1, y1, x2, y2],
                     "original_text": r.original_text or "",
                     "translated_text": r.translated_text or "",
-                })
-
-            annotated_image = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            })
 
 finally:
     db.close()
@@ -239,6 +222,39 @@ with c_nav:
                 st.query_params["page_id"] = str(next_page_id)
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
+
+selected_region_id = regions_data[0]["id"] if regions_data else None
+if regions_data:
+    selected_region_id = st.radio(
+        "Select a detected bubble to highlight",
+        options=[item["id"] for item in regions_data],
+        format_func=lambda region_id: next(
+            f"Bubble #{item['index']}" for item in regions_data if item["id"] == region_id
+        ),
+        horizontal=True,
+        key="selected_review_region",
+    )
+
+if regions_data and os.path.exists(orig_real_path):
+    img_bgr = cv2.imread(orig_real_path)
+    for item in regions_data:
+        x1, y1, x2, y2 = item["bbox"]
+        is_selected = item["id"] == selected_region_id
+        box_color = (52, 122, 47) if is_selected else (111, 50, 37)
+        thickness = 6 if is_selected else 2
+        cv2.rectangle(img_bgr, (x1, y1), (x2, y2), box_color, thickness)
+        cv2.circle(img_bgr, (x1 + 18, y1 + 18), 16, box_color, -1)
+        cv2.putText(
+            img_bgr,
+            str(item["index"]),
+            (x1 + 10, y1 + 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+    annotated_image = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
 # 4. Workspace Split: Cột trái (Ảnh YOLOv8) & Cột phải (Danh sách OCR)
 col_left, col_right = st.columns([1.1, 0.9], gap="large")
@@ -286,6 +302,8 @@ with col_right:
 
             is_warning = idx == 3  # Mô phỏng card có cảnh báo độ tin cậy thấp như Figma
             card_class = "bubble-card-warning" if is_warning else "bubble-card"
+            if rid == selected_region_id:
+                card_class += " bubble-card-selected"
             badge_html = """<span class="badge-warning">0.52 Low Confidence</span>""" if is_warning else """<span class="badge-verified">0.96 Confident</span>"""
             bubble_type = "Sound Effect (Onomatopoeia)" if idx == 3 else "Speech Bubble • Panel"
 
@@ -338,26 +356,15 @@ with col_bot_btns:
     with b1:
         if st.button("Save OCR & Re-Translate", key="btn_retranslate", use_container_width=True):
             if current_page:
-                db_action = SessionLocal()
                 try:
-                    retrans = False
-                    for reg_id, text_val in edited_texts.items():
-                        r_obj = db_action.query(TextRegion).filter(TextRegion.id == reg_id).first()
-                        if r_obj and text_val.strip() and r_obj.original_text != text_val.strip():
-                            r_obj.original_text = text_val.strip()
-                            r_obj.translated_text = ""
-                            retrans = True
-                    db_action.commit()
-
-                    if retrans:
-                        translate_manga_text(page_id=current_page.id)
-                        process_comic_page(page_id=current_page.id, use_lama_api=False)
+                    changed = save_ocr_and_retranslate(current_page.id, edited_texts)
+                    if changed:
                         st.success("✅ Đã cập nhật OCR và dịch lại thành công!")
                         st.rerun()
                     else:
                         st.info("Nội dung không có thay đổi.")
-                finally:
-                    db_action.close()
+                except ReviewServiceError as exc:
+                    st.error(str(exc))
 
     with b2:
         if st.button("Confirm & Proceed to Typesetting ➔", key="btn_confirm_typeset", use_container_width=True):
