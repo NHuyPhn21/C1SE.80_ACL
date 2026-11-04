@@ -1,704 +1,285 @@
-"""ACL Team Workspace & Member Role Assignment — Screen ACL-05.
-
-Pixel-perfect implementation matching Google Stitch Project 'UX/UI_ACL'.
-Screen: ACL-05: Team Workspace & Member Role Assignment.
-100% real SQLite data, zero mock data, responsive layout.
-"""
+"""Database-backed Team Workspace and project role assignment (100% Streamlit Native, Zero Iframe)."""
 
 from html import escape
 import os
-from pathlib import Path
-
-import streamlit as st
-import streamlit.components.v1 as components
-
 import socket
-from utils.auth_session import require_auth
-from backend.database import SessionLocal, init_db
-from backend.models import Chapter, ComicPage, Project, ProjectMembership, User
+import psutil
+import streamlit as st
+
+from services.team_service import TeamService, TeamServiceError
 from services.workspace_service import WorkspaceService
+from utils.auth_session import logout, require_auth
+from utils.page_navigation import render_page_navigation
 
-# Enforce authentication guard
 user = require_auth()
-hostname = socket.gethostname()
+render_page_navigation()
 
-user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
-user_name = user.full_name or "Phan Van Quan"
+try:
+    current_user_id = int(user.id)
+except (ValueError, TypeError):
+    st.error("Tài khoản người dùng không hợp lệ. Vui lòng đăng nhập lại.")
+    st.stop()
 
-init_db()
-db = SessionLocal()
-
-# Determine project dynamically
+team_service = TeamService()
 workspace_service = WorkspaceService()
+
+# 1. Thống nhất xác định Project xuyên suốt giữa các trang
 user_projects = []
 try:
-    user_projects = workspace_service.list_projects(int(user.id))
+    user_projects = workspace_service.list_projects(current_user_id)
 except Exception:
     pass
 
-default_proj = user_projects[0].title if user_projects else "Local Manga"
-project_name = st.query_params.get("project", default_proj)
+default_proj_title = user_projects[0].title if user_projects else "Local Manga"
+project_title = st.query_params.get("project", st.session_state.get("current_project_title", default_proj_title))
 
-curr_project = db.query(Project).filter_by(title=project_name).first()
-if not curr_project:
-    curr_project = db.query(Project).first()
-    if not curr_project:
-        owner_u = db.query(User).filter_by(email=user.email).first()
-        if not owner_u:
-            owner_u = User(
-                username=user.full_name or "Phan Van Quan",
-                email=user.email,
-                password_hash="mock",
-                role="editor",
-            )
-            db.add(owner_u)
-            db.commit()
-            db.refresh(owner_u)
-        curr_project = Project(
-            owner_id=owner_u.id,
-            title=project_name,
-            description="Active Project Workspace",
-        )
-        db.add(curr_project)
-        db.commit()
-        db.refresh(curr_project)
+project = team_service.get_or_create_project(project_title, current_user_id)
+st.session_state["current_project_id"] = project.id
+st.session_state["current_project_title"] = project.title
+st.query_params["project_id"] = str(project.id)
+st.query_params["project"] = project.title
 
-project_name = curr_project.title
+# 2. Đọc thông số phần cứng thật
+hardware_info = "Local Worker"
+try:
+    hostname = socket.gethostname()
+    vm = psutil.virtual_memory()
+    total_ram = round(vm.total / (1024**3), 1)
+    used_ram = round(vm.used / (1024**3), 1)
+    ram_pct = int(vm.percent)
+    cores = os.cpu_count() or 1
+    hardware_info = f"Node {hostname} (RAM {used_ram}/{total_ram} GB • {ram_pct}% • {cores} Cores)"
+except Exception:
+    hardware_info = "Node Worker (Active)"
 
-# Handle Remove Member Action
-remove_mid = st.query_params.get("remove_member_id")
-if remove_mid:
-    try:
-        mid_int = int(remove_mid)
-        db.query(ProjectMembership).filter_by(id=mid_int).delete()
-        db.commit()
-    except Exception:
-        pass
-    st.query_params.pop("remove_member_id", None)
-    st.rerun()
-
-# Handle Send Invite Action
-invite_email = st.query_params.get("invite_email")
-invite_role = st.query_params.get("invite_role", "Translator")
-if invite_email:
-    clean_email = invite_email.strip().lower()
-    target_u = db.query(User).filter_by(email=clean_email).first()
-    if not target_u:
-        uname = clean_email.split("@")[0].replace(".", " ").title()
-        target_u = User(
-            username=uname,
-            email=clean_email,
-            password_hash="invited_user_hash",
-            role="member",
-        )
-        db.add(target_u)
-        db.commit()
-        db.refresh(target_u)
-
-    existing_m = (
-        db.query(ProjectMembership)
-        .filter_by(project_id=curr_project.id, user_id=target_u.id)
-        .first()
-    )
-    if not existing_m:
-        new_m = ProjectMembership(
-            project_id=curr_project.id,
-            user_id=target_u.id,
-            project_role=invite_role,
-        )
-        db.add(new_m)
-        db.commit()
-
-    st.query_params.pop("invite_email", None)
-    st.query_params.pop("invite_role", None)
-    st.rerun()
-
-# Ensure at least owner exists in project_memberships
-existing_members = (
-    db.query(ProjectMembership).filter_by(project_id=curr_project.id).all()
-)
-if not existing_members:
-    db.add(
-        ProjectMembership(
-            project_id=curr_project.id,
-            user_id=int(user.id),
-            project_role="Project Manager",
-        )
-    )
-    db.commit()
-
-# Query real memberships from SQLite
-db_memberships = (
-    db.query(ProjectMembership)
-    .filter_by(project_id=curr_project.id)
-    .order_by(ProjectMembership.id.asc())
-    .all()
-)
-total_members_count = len(db_memberships)
-
-# Real Workload from ComicPage
-pages = (
-    db.query(ComicPage)
-    .join(Chapter, ComicPage.chapter_id == Chapter.id)
-    .filter(Chapter.project_id == curr_project.id)
-    .all()
-)
-total_pages = len(pages)
-done_pages = sum(p.status == "COMPLETED" for p in pages)
-workload_pct = (
-    round((done_pages / total_pages) * 100)
-    if total_pages > 0
-    else (100 if done_pages > 0 else 0)
-)
-workload_display = (
-    f"{done_pages} / {total_pages}" if total_pages > 0 else "0 / 0"
-)
-
-# Generate Dynamic Table Rows
-table_rows_list = []
-role_color_map = {
-    "Project Manager": ("bg-[#EDE7F6]", "text-[#5E35B1]"),
-    "Translator": ("bg-[#E6F4EA]", "text-[#137333]"),
-    "Typesetter": ("bg-[#E8F0FE]", "text-[#1A73E8]"),
-    "Cleaner": ("bg-[#FEF7E0]", "text-[#B06000]"),
-    "Editor": ("bg-[#EDE7F6]", "text-[#5E35B1]"),
-    "Owner": ("bg-[#EDE7F6]", "text-[#5E35B1]"),
-    "Proofreader": ("bg-[#E6F4EA]", "text-[#137333]"),
-}
-
-trans_count = 0
-type_count = 0
-
-for m in db_memberships:
-    u_obj = m.user
-    full_n = u_obj.username if (u_obj and u_obj.username) else "Studio Member"
-    u_email = u_obj.email if (u_obj and u_obj.email) else ""
-    u_role = m.project_role
-
-    if u_role == "Translator":
-        trans_count += 1
-    elif u_role == "Typesetter":
-        type_count += 1
-
-    words = full_n.strip().split()
-    initials = (
-        (words[0][0] + words[-1][0]).upper()
-        if len(words) >= 2
-        else full_n[:2].upper()
-    )
-
-    badge_bg, badge_txt = role_color_map.get(
-        u_role, ("bg-surface-container", "text-on-surface-variant")
-    )
-
-    is_owner = (
-        u_role in ["Project Manager", "Owner"] or m.user_id == curr_project.owner_id
-    )
-    verified_badge = (
-        '<span class="material-symbols-outlined text-[14px] text-primary-container" title="Verified Project Lead">verified</span>'
-        if is_owner
-        else ""
-    )
-    dot_color = "bg-[#137333]" if is_owner else "bg-primary-container"
-
-    if is_owner:
-        action_html = '<span class="px-3 py-1 rounded-full text-xs font-semibold bg-surface-container text-on-surface-variant font-code">Owner</span>'
-        tasks_desc = f"Overall Supervision • {total_pages} pages"
-    else:
-        escaped_n = full_n.replace("'", "\\'")
-        action_html = f"""<button onclick="removeMember({m.id}, '{escaped_n}')" class="text-xs font-semibold text-[#BA1A1A] hover:underline flex items-center gap-1 cursor-pointer transition-colors" type="button">
-          <span class="material-symbols-outlined text-[15px]">person_remove</span>
-          <span>Remove</span>
-        </button>"""
-        tasks_desc = f"Active Assignment • {u_role} Tasks"
-
-    row_html = f"""
-    <tr class="member-row hover:bg-surface-container-low/40 transition-colors group" data-role="{u_role}">
-      <td class="py-4 px-6">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-code text-xs font-bold shadow-sm">{initials}</div>
-          <div>
-            <div class="font-headline text-sm font-bold text-on-surface flex items-center gap-1.5">
-              <span>{escape(full_n)}</span>
-              {verified_badge}
-            </div>
-            <div class="font-code text-xs text-on-surface-variant mt-0.5">{escape(u_email)}</div>
-          </div>
-        </div>
-      </td>
-      <td class="py-4 px-6">
-        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full {badge_bg} {badge_txt} font-code text-xs font-semibold">
-          <span>{escape(u_role)}</span>
-        </span>
-      </td>
-      <td class="py-4 px-6 font-code text-xs text-on-surface-variant">
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full {dot_color}"></span>
-          <span>{tasks_desc}</span>
-        </div>
-      </td>
-      <td class="py-4 px-6 text-right font-code text-xs">
-        {action_html}
-      </td>
-    </tr>
+# 3. CSS cục bộ (100% tự chứa, không phụ thuộc Tailwind CDN bên ngoài)
+st.markdown(
     """
-    table_rows_list.append(row_html)
-
-rendered_member_rows = "\n".join(table_rows_list)
-
-team_workspace_html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta content="web_dashboard" name="shell-type"/>
-<link href="https://fonts.googleapis.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Sora:wght@600;700;800&subset=vietnamese,latin,latin-ext&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
-
-<script src="https://cdn.tailwindcss.com"></script>
-<script id="tailwind-config">
-tailwind.config = {{
-  theme: {{
-    extend: {{
-      colors: {{
-        primary: "#1C274C",
-        "primary-container": "#25326F",
-        "on-primary": "#ffffff",
-        "primary-fixed": "#dde1ff",
-        "on-primary-fixed": "#09164a",
-        secondary: "#536435",
-        "secondary-container": "#d6e9b0",
-        "on-secondary-container": "#3c4c20",
-        tertiary: "#356658",
-        "tertiary-container": "#383063",
-        "on-tertiary": "#ffffff",
-        surface: "#f8faf7",
-        "surface-container-lowest": "#ffffff",
-        "surface-container-low": "#f2f5f1",
-        "surface-container": "#ecefe9",
-        "surface-container-high": "#e6e9e4",
-        "surface-container-highest": "#e0e4de",
-        "surface-variant": "#e1e4df",
-        "on-surface": "#191c19",
-        "on-surface-variant": "#5a5e62",
-        outline: "#717971",
-        "outline-variant": "#c1c8be",
-        error: "#ba1a1a",
-        "error-container": "#ffdad6",
-        "on-error-container": "#93000a",
-        "tertiary-fixed": "#e6deff"
-      }},
-      fontFamily: {{
-        sans: ["Plus Jakarta Sans", "sans-serif"],
-        headline: ["Sora", "sans-serif"],
-        code: ["JetBrains Mono", "monospace"]
-      }}
-    }}
-  }}
-}};
-</script>
-<style>
-font {{
-  font-family: inherit !important;
-  font-size: inherit !important;
-  line-height: inherit !important;
-}}
-.notranslate {{
-  translate: no !important;
-}}
-</style>
-</head>
-<body class="bg-surface font-sans text-on-surface antialiased">
-
-<!-- FIXED LEFT SIDEBAR (Matching Image 4) -->
-<aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between py-5 border-r border-[#E4DFD6]">
-  <div>
-    <!-- Brand / Logo Area: Minimalist Typography with Accent Brand Dot -->
-    <div class="px-5 mb-6 cursor-pointer select-none transition-opacity hover:opacity-90" onclick="navigateParent('workspace')" title="ACL - Automated Comic Localization">
-      <div class="flex items-baseline gap-1.5">
-        <span class="font-headline text-[24px] font-black text-[#1C274C] tracking-tighter leading-none">ACL</span>
-        <span class="w-2 h-2 rounded-full bg-[#1C274C] inline-block"></span>
-      </div>
-      <p class="text-[10.5px] text-[#64748B] font-medium tracking-tight mt-1 leading-tight">Automated Comic Localization</p>
-    </div>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     
-    <!-- Navigation Links -->
-    <nav class="px-3 flex flex-col gap-1">
-      <a class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all cursor-pointer" onclick="navigateParent('workspace')">
-        <span class="material-symbols-outlined text-[20px]">folder</span>
-        <span>Projects</span>
-      </a>
-      <a aria-current="page" class="flex items-center gap-3 px-3 py-2 transition-all bg-primary-container text-on-primary text-xs font-semibold rounded-xl cursor-pointer shadow-sm" onclick="navigateParent('team-roles')">
-        <span class="material-symbols-outlined text-[20px]">groups</span>
-        <span>Team Roles</span>
-      </a>
-      <a class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all cursor-pointer" onclick="navigateParent('chapter-studio')">
-        <span class="material-symbols-outlined text-[20px]">cloud_upload</span>
-        <span>Chapter Studio</span>
-      </a>
-      <a class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all cursor-pointer" onclick="navigateParent('review-studio')">
-        <span class="material-symbols-outlined text-[20px]">vertical_split</span>
-        <span>Review Studio</span>
-      </a>
-      <a class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all cursor-pointer" onclick="navigateParent('typesetting')">
-        <span class="material-symbols-outlined text-[20px]">edit_note</span>
-        <span>Typesetting</span>
-      </a>
-      <a class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all cursor-pointer" onclick="navigateParent('queue-monitor')">
-        <span class="material-symbols-outlined text-[20px]">schedule</span>
-        <span>Queue Monitor</span>
-      </a>
-      <a class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all cursor-pointer" onclick="navigateParent('settings')">
-        <span class="material-symbols-outlined text-[20px]">settings</span>
-        <span>Personal Settings</span>
-      </a>
-    </nav>
-  </div>
-
-  <!-- Sidebar Footer: Documentation & Core Online -->
-  <div class="px-5 pt-3 border-t border-[#E4DFD6] flex flex-col gap-2.5">
-    <a class="flex items-center gap-2 text-on-surface-variant hover:text-on-surface text-xs font-medium cursor-pointer transition-colors" onclick="alert('ACL Documentation v2.4: System guides and RBAC specs.')">
-      <span class="material-symbols-outlined text-[18px]">help_outline</span>
-      <span>Documentation</span>
-    </a>
-    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9] font-code text-xs font-semibold w-fit">
-      <span class="w-2 h-2 rounded-full bg-[#2E7D32] animate-pulse"></span>
-      <span>Core • Online</span>
-    </div>
-  </div>
-</aside>
-
-<!-- MAIN APP SHELL -->
-<div class="pl-[220px]">
-
-  <!-- TOP HEADER BAR -->
-  <header class="fixed top-0 left-[220px] right-0 h-16 bg-surface-container-lowest/95 backdrop-blur-md z-40 px-8 flex items-center justify-between border-b border-[#E4DFD6]">
+    html, body, [data-testid="stAppViewContainer"] {
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        background-color: #F8F9FA !important;
+        color: #1A1D1F !important;
+    }
     
-    <!-- Left: Breadcrumb -->
-    <div class="flex items-center gap-2 flex-wrap">
-      <a class="text-base font-bold text-on-surface hover:text-primary-container transition-colors cursor-pointer" onclick="navigateParent('workspace')">ACL Studio</a>
-      <span class="text-outline-variant font-light text-sm">/</span>
-      <a class="text-sm text-on-surface-variant font-medium hover:text-on-surface transition-colors cursor-pointer" onclick="navigateParent('workspace')">Projects</a>
-      <span class="text-outline-variant font-light text-sm">/</span>
-      <a class="text-sm text-on-surface-variant font-medium hover:text-primary-container transition-colors cursor-pointer notranslate" translate="no" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{escape(project_name)}'))">{escape(project_name)}</a>
-      <span class="text-outline-variant font-light text-sm">/</span>
-      <span class="text-sm text-primary-container font-semibold">Team Workspace</span>
+    .workspace-top-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0 1.25rem 0;
+        border-bottom: 1px solid #EAEAEA;
+        margin-bottom: 1.5rem;
+    }
+    
+    .brand-wrap {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+    }
+    .brand-title {
+        font-size: 22px;
+        font-weight: 900;
+        color: #1C274C;
+        letter-spacing: -0.03em;
+    }
+    .brand-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background-color: #2563EB;
+        margin-bottom: 2px;
+    }
+    .brand-divider {
+        height: 18px;
+        width: 1px;
+        background: #D1D5DB;
+        margin: 0 12px;
+    }
+    .brand-sub {
+        font-size: 12px;
+        font-weight: 700;
+        color: #475569;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .node-pill {
+        background: #E8F5E9;
+        color: #2E7D32;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 11px;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .node-dot {
+        width: 7px;
+        height: 7px;
+        background: #2E7D32;
+        border-radius: 50%;
+    }
+    
+    .role-badge {
+        background: #E8EDFB;
+        color: #1C274C;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        display: inline-block;
+    }
+    .role-badge-owner {
+        background: #FEF3C7;
+        color: #92400E;
+    }
+    
+    div.stButton > button {
+        border-radius: 9999px !important;
+        font-weight: 700 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# 4. Top Bar Header
+st.markdown(
+    f"""
+    <div class="workspace-top-bar">
+        <div style="display:flex; align-items:center;">
+            <div class="brand-wrap">
+                <span class="brand-title">ACL</span>
+                <span class="brand-dot"></span>
+            </div>
+            <div class="brand-divider"></div>
+            <span class="brand-sub">Automated Comic Localization</span>
+        </div>
+        <div class="node-pill">
+            <span class="node-dot"></span>
+            {hardware_info}
+        </div>
     </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-    <!-- Right Header Controls -->
-    <div class="flex items-center gap-4">
-      <div class="hidden md:flex items-center bg-surface-container-low rounded-full px-3.5 py-1.5 border border-[#E4DFD6]">
-        <span class="material-symbols-outlined text-[18px] text-on-surface-variant mr-1.5">search</span>
-        <input class="bg-transparent text-xs outline-none placeholder:text-on-surface-variant w-36 text-on-surface" placeholder="Filter workspace..." type="text"/>
-      </div>
+# 5. Tiêu đề và thông tin dự án
+st.caption(f"ACL Studio / Projects / {project.title} / Team Workspace")
+header_col, logout_col = st.columns([4, 0.8])
+with header_col:
+    st.markdown(
+        f"""
+        <h1 style="font-size:2rem; font-weight:800; margin:0; color:#1A1D1F;">Nhóm &amp; Phân Quyền Thành Viên</h1>
+        <p style="color:#6C7275; margin:0.25rem 0 1.25rem;">Quản lý các thành viên tham gia dự án <strong>{escape(project.title)}</strong> trong database SQLite.</p>
+        """,
+        unsafe_allow_html=True,
+    )
+with logout_col:
+    st.write("")
+    if st.button("Đăng xuất", use_container_width=True):
+        logout()
+        st.switch_page("pages/0_Login.py")
 
-      <!-- Node Status Badge -->
-      <a onclick="navigateParent('queue-monitor')" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="Host Node Status">
-        <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
-        <span>Node: {hostname} (Ready)</span>
-      </a>
+# 6. Form Mời Thành Viên Native
+with st.container(border=True):
+    st.markdown("#### ➕ Mời Thành Viên Mới")
+    email_col, role_col, submit_col = st.columns([2.5, 1.5, 1])
+    with email_col:
+        invite_email = st.text_input(
+            "Email đồng nghiệp",
+            placeholder="colleague@studio.com",
+            label_visibility="collapsed",
+            key="team_invite_email_input",
+        )
+    with role_col:
+        invite_role = st.selectbox(
+            "Vai trò",
+            ["Translator", "Typesetter", "Project Manager"],
+            label_visibility="collapsed",
+            key="team_invite_role_select",
+        )
+    with submit_col:
+        if st.button("Gửi Lời Mời", use_container_width=True):
+            if not invite_email.strip():
+                st.error("Vui lòng nhập địa chỉ email đồng nghiệp.")
+            else:
+                try:
+                    invited = team_service.invite_member(project.id, invite_email.strip(), invite_role)
+                    st.success(f"Đã thêm {invited.name} với vai trò {invited.role} thành công!")
+                    st.rerun()
+                except TeamServiceError as exc:
+                    st.error(f"Lỗi khi mời thành viên: {exc}")
 
-      <!-- Notification Bell -->
-      <div class="relative">
-        <button onclick="alert('No new unread team notifications.')" class="relative p-1.5 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" title="Notifications">
-          <span class="material-symbols-outlined text-[22px]">notifications</span>
-        </button>
-      </div>
+# 7. Thống kê số lượng thành viên
+members = team_service.list_members(project.id)
+m_col1, m_col2, m_col3 = st.columns(3)
+m_col1.metric("Tổng Số Thành Viên", len(members))
+m_col2.metric("Số Lượng Vai Trò", len({m.role for m in members}))
+m_col3.metric("Quyền Truy Cập", "Private Team")
 
-      <!-- User Profile Menu (Matching Image 1) -->
-      <div class="relative pl-2 border-l border-[#E4DFD6]">
-        <button id="profile-btn" onclick="toggleProfileDropdown(event)" class="flex items-center gap-1.5 p-1 rounded-full hover:bg-surface-container transition-colors cursor-pointer group" title="Account Menu">
-          <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center font-bold text-xs text-on-primary shadow-sm notranslate" translate="no" title="{escape(user_name)}">
-            {user_initials}
-          </div>
-          <span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-on-surface transition-transform duration-200">expand_more</span>
-        </button>
+# 8. Danh sách thành viên dự án
+with st.container(border=True):
+    list_head_col, filter_col = st.columns([3, 1.2])
+    with list_head_col:
+        st.markdown("### Danh Sách Thành Viên Dự Án")
+    with filter_col:
+        filter_role = st.selectbox(
+            "Lọc theo vai trò",
+            ["Tất cả", "Translator", "Typesetter", "Project Manager", "Owner"],
+            label_visibility="collapsed",
+        )
 
-        <!-- Profile Popover Dropdown -->
-        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-surface-container-lowest rounded-2xl shadow-xl border border-[#E4DFD6] py-2 z-50 text-left transition-all">
-          <div class="px-4 py-3 border-b border-[#E4DFD6]/70 flex items-center gap-3">
-            <div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center font-bold text-sm text-on-primary shrink-0 notranslate" translate="no">
-              {user_initials}
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-bold text-on-surface truncate notranslate" translate="no">{escape(user_name)}</div>
-              <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E8EDF4] text-primary-container font-code text-[11px] font-semibold mt-0.5">
-                <span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
-                <span>Lead Editor</span>
-              </div>
-            </div>
-          </div>
-          <div class="py-1">
-            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('settings')">
-              <span class="material-symbols-outlined text-[18px]">manage_accounts</span>
-              <span>Personal Settings</span>
-            </a>
-            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('workspace')">
-              <span class="material-symbols-outlined text-[18px]">folder</span>
-              <span>Workspace Projects</span>
-            </a>
-            <div class="border-t border-[#E4DFD6]/70 my-1"></div>
-            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#BA1A1A] hover:bg-[#FFDAD6]/40 transition-colors cursor-pointer" onclick="navigateParent('login?logout=1')">
-              <span class="material-symbols-outlined text-[18px] text-[#BA1A1A]">logout</span>
-              <span>Sign Out</span>
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-  </header>
+    filtered_members = members
+    if filter_role != "Tất cả":
+        if filter_role == "Owner":
+            filtered_members = [m for m in members if m.is_owner]
+        else:
+            filtered_members = [m for m in members if m.role == filter_role]
 
-  <!-- MAIN VIEWPORT CONTENT (Matching Image 4) -->
-  <main class="w-full min-h-screen pt-20 pb-12 bg-surface px-8">
-    <div class="max-w-7xl mx-auto flex flex-col w-full">
+    if not filtered_members:
+        st.info("Không có thành viên nào phù hợp với bộ lọc đã chọn.")
+    else:
+        for member in filtered_members:
+            owner_badge_class = " role-badge-owner" if member.is_owner else ""
+            owner_text = " (Chủ sở hữu)" if member.is_owner else ""
 
-      <!-- Navigation & Status Bar -->
-      <div class="flex items-center justify-between gap-4 mb-6 flex-wrap">
-        <div class="flex items-center gap-2.5">
-          <a class="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-container hover:text-primary transition-colors py-1.5 px-3.5 rounded-full bg-primary-fixed/40 hover:bg-primary-fixed/70 cursor-pointer" onclick="navigateParent('workspace')">
-            <span class="material-symbols-outlined text-[16px]">arrow_back</span>
-            <span>Back to Projects</span>
-          </a>
-          <a class="inline-flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors py-1.5 px-3.5 rounded-full bg-surface-container-low cursor-pointer border border-[#E4DFD6]" onclick="navigateParent('chapter-studio?project=' + encodeURIComponent('{escape(project_name)}'))">
-            <span>Open Chapter Studio</span>
-            <span class="material-symbols-outlined text-[15px]">arrow_forward</span>
-          </a>
-        </div>
-        <div class="inline-flex items-center gap-2 px-3 py-1 bg-surface-container-low rounded-full border border-[#E4DFD6]/60">
-          <span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-          <span class="font-code text-xs text-on-surface-variant">RBAC Sync: Enforced &amp; Active</span>
-        </div>
-      </div>
-
-      <!-- Header Section: Title & Invite Button -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 class="font-headline text-3xl font-bold text-on-surface tracking-tight">Team Workspace &amp; Roles</h1>
-          <p class="text-sm text-on-surface-variant mt-1 font-normal">
-            Assign roles and permissions for project: <span class="text-on-surface font-semibold notranslate" translate="no">{escape(project_name)}</span>
-          </p>
-        </div>
-        <button class="inline-flex items-center gap-2 h-11 px-6 rounded-full bg-primary text-on-primary text-sm font-semibold hover:bg-primary-container transition-all shadow-sm active:scale-95 cursor-pointer self-start sm:self-auto" onclick="document.getElementById('inviteInput').focus()">
-          <span class="material-symbols-outlined text-[18px]">person_add</span>
-          <span>+ Invite Member</span>
-        </button>
-      </div>
-
-      <!-- 3 KPI METRIC CARDS (Matching Image 4) -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        
-        <!-- Card 1: TOTAL MEMBERS -->
-        <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] hover:shadow-md transition-all flex items-center justify-between group">
-          <div>
-            <span class="font-code text-xs uppercase tracking-wider text-on-surface-variant font-semibold block mb-1">TOTAL MEMBERS</span>
-            <div class="flex items-baseline gap-2">
-              <span id="memberCountLarge" class="font-headline text-3xl font-bold text-on-surface">{total_members_count}</span>
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-[#137333] font-code">
-                <span class="w-1.5 h-1.5 rounded-full bg-[#137333]"></span>
-                <span>Active</span>
-              </span>
-            </div>
-            <p class="text-xs text-on-surface-variant mt-1">Full editorial team assigned</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-[#F0F4F8] flex items-center justify-center text-primary-container">
-            <span class="material-symbols-outlined text-[24px]">group</span>
-          </div>
-        </div>
-
-        <!-- Card 2: ASSIGNED WORKLOAD -->
-        <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] hover:shadow-md transition-all flex items-center justify-between group">
-          <div class="flex-1 pr-4">
-            <span class="font-code text-xs uppercase tracking-wider text-on-surface-variant font-semibold block mb-1">ASSIGNED WORKLOAD</span>
-            <div class="flex items-baseline gap-1.5">
-              <span class="font-headline text-3xl font-bold text-on-surface">{workload_display}</span>
-              <span class="text-xs text-on-surface-variant font-medium">Pages</span>
-            </div>
-            <div class="w-full bg-[#E8EAED] rounded-full h-1.5 mt-2.5 overflow-hidden">
-              <div class="bg-[#137333] h-1.5 rounded-full" style="width: {workload_pct}%"></div>
-            </div>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-[#E8F5E9] flex items-center justify-center text-[#137333] shrink-0">
-            <span class="material-symbols-outlined text-[24px]">assignment_turned_in</span>
-          </div>
-        </div>
-
-        <!-- Card 3: ACCESS LEVEL -->
-        <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] hover:shadow-md transition-all flex items-center justify-between group">
-          <div>
-            <span class="font-code text-xs uppercase tracking-wider text-on-surface-variant font-semibold block mb-1">ACCESS LEVEL</span>
-            <span class="font-headline text-lg font-bold text-on-surface block">Private Workspace</span>
-            <div class="flex items-center gap-1.5 mt-1.5">
-              <span class="px-2 py-0.5 rounded bg-surface-container font-code text-[11px] font-semibold text-on-surface-variant border border-[#E4DFD6]/60">SOC2 Ingestion Encrypted</span>
-            </div>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-[#F0F4F8] flex items-center justify-center text-primary-container">
-            <span class="material-symbols-outlined text-[24px]">verified_user</span>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Quick Invite Bar (Matching Image 4) -->
-      <div class="bg-surface-container-lowest rounded-2xl p-6 shadow-sm mb-6 border border-[#E4DFD6]">
-        <div class="flex items-center gap-2 mb-3">
-          <span class="material-symbols-outlined text-[18px] text-primary-container">mail</span>
-          <span class="text-xs font-bold text-on-surface uppercase tracking-wider font-code">Quick Invite:</span>
-        </div>
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div class="flex-1 relative">
-            <input class="w-full h-11 px-4 bg-surface-container-low text-on-surface text-xs rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-container/25 placeholder:text-outline border border-[#E4DFD6]" id="inviteInput" placeholder="colleague@studio.com" type="email"/>
-          </div>
-          <div class="w-full sm:w-48 relative">
-            <select class="w-full h-11 px-3 pr-8 bg-surface-container-low text-on-surface text-xs font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-container/25 appearance-none cursor-pointer border border-[#E4DFD6]" id="roleSelect">
-              <option value="Translator">Translator</option>
-              <option value="Typesetter">Typesetter</option>
-              <option value="Project Manager">Project Manager</option>
-            </select>
-            <span class="material-symbols-outlined absolute right-2.5 top-3 text-[18px] text-outline pointer-events-none">expand_more</span>
-          </div>
-          <button onclick="submitInvite()" class="h-11 px-6 rounded-full bg-primary hover:bg-primary-container text-on-primary text-xs font-semibold transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap active:scale-95 cursor-pointer" id="sendInviteBtn">
-            <span class="material-symbols-outlined text-[16px]">send</span>
-            <span>Send Invite</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Workspace Members Table (Matching Image 4) -->
-      <div class="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden mb-8 border border-[#E4DFD6]">
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-container-low border-b border-[#E4DFD6]">
-          <div class="flex items-center gap-2">
-            <h3 class="font-headline text-base font-bold text-on-surface">Workspace Members</h3>
-            <span id="memberCountBadge" class="w-5 h-5 rounded-full bg-surface-container-high text-on-surface-variant font-code text-xs flex items-center justify-center font-semibold">{total_members_count}</span>
-          </div>
-          
-          <div class="flex items-center gap-2">
-            <span class="font-code text-xs text-on-surface-variant">Filter:</span>
-            <button onclick="filterMembers('all')" id="filter-all" class="px-3 py-1 rounded-full font-code text-xs bg-surface-container-lowest text-on-surface font-semibold shadow-xs border border-[#E4DFD6] cursor-pointer">All ({total_members_count})</button>
-            <button onclick="filterMembers('Translator')" id="filter-trans" class="px-3 py-1 rounded-full font-code text-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-lowest transition-colors cursor-pointer">Translators ({trans_count})</button>
-            <button onclick="filterMembers('Typesetter')" id="filter-type" class="px-3 py-1 rounded-full font-code text-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-lowest transition-colors cursor-pointer">Typesetters ({type_count})</button>
-          </div>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="w-full text-left table-fixed border-collapse">
-            <thead>
-              <tr class="bg-surface-container-low/60 text-on-surface font-headline text-xs uppercase tracking-wider border-b border-[#E4DFD6]">
-                <th class="py-3.5 px-6 w-[35%]" scope="col">Member Name &amp; Email</th>
-                <th class="py-3.5 px-6 w-[25%]" scope="col">Assigned Role</th>
-                <th class="py-3.5 px-6 w-[22%]" scope="col">Active Tasks</th>
-                <th class="py-3.5 px-6 w-[18%] text-right" scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-surface-container-high/40 text-sm" id="memberTableBody">
-              {rendered_member_rows}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Role Permissions Guide Card (Matching Image 4) -->
-      <div class="bg-surface-container-lowest rounded-2xl p-6 shadow-sm mb-6 border border-[#E4DFD6]">
-        <div class="flex items-center justify-between pb-3 mb-6 border-b border-[#E4DFD6]">
-          <div class="flex items-center gap-2.5">
-            <span class="material-symbols-outlined text-primary-container text-[22px]">policy</span>
-            <h3 class="font-headline text-base font-bold text-on-surface">Role Permissions Guide</h3>
-          </div>
-          <span class="font-code text-xs text-on-surface-variant bg-surface-container-high px-2.5 py-1 rounded-full border border-[#E4DFD6]/60">Security Scope: Project-Level Only</span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="flex flex-col bg-surface-container-low p-5 rounded-xl border border-[#E4DFD6]/60">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-primary-container"></span>
-              <h4 class="font-headline text-sm font-bold text-on-surface">Project Manager</h4>
-            </div>
-            <p class="text-xs text-on-surface-variant leading-relaxed">
-              Highest operational tier inside project sandbox. Oversees pipeline deadlines and structural review.
-            </p>
-          </div>
-
-          <div class="flex flex-col bg-surface-container-low p-5 rounded-xl border border-[#E4DFD6]/60">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-[#137333]"></span>
-              <h4 class="font-headline text-sm font-bold text-on-surface">Translator</h4>
-            </div>
-            <p class="text-xs text-on-surface-variant leading-relaxed">
-              Dedicated linguist workspace. Focused on textual accuracy, reading direction nuances, and terminology consistency.
-            </p>
-          </div>
-
-          <div class="flex flex-col bg-surface-container-low p-5 rounded-xl border border-[#E4DFD6]/60">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-[#1A73E8]"></span>
-              <h4 class="font-headline text-sm font-bold text-on-surface">Typesetter</h4>
-            </div>
-            <p class="text-xs text-on-surface-variant leading-relaxed">
-              Visual craftsmanship tier. Manages letter spacing, balloon padding, SFX styling, and font typography pairings.
-            </p>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </main>
-</div>
-
-<script>
-function navigateParent(path) {{
-  const target = '/' + path.replace(/^\\//, '');
-  try {{
-    if (window.parent && window.parent.location) {{
-      window.parent.location.href = window.parent.location.origin + target;
-      return;
-    }}
-  }} catch (e) {{}}
-  window.location.href = target;
-}}
-
-function submitInvite() {{
-  const emailInput = document.getElementById('inviteInput');
-  const roleSelect = document.getElementById('roleSelect');
-  if (!emailInput || !emailInput.value.trim()) return;
-  const email = emailInput.value.trim();
-  const role = roleSelect ? roleSelect.value : 'Translator';
-  navigateParent('team-roles?project=' + encodeURIComponent('{escape(project_name)}') + '&invite_email=' + encodeURIComponent(email) + '&invite_role=' + encodeURIComponent(role));
-}}
-
-function removeMember(memberId, memberName) {{
-  if (confirm('Are you sure you want to remove ' + memberName + ' from this project?')) {{
-    navigateParent('team-roles?project=' + encodeURIComponent('{escape(project_name)}') + '&remove_member_id=' + memberId);
-  }}
-}}
-
-function filterMembers(role) {{
-  const rows = document.querySelectorAll('.member-row');
-  rows.forEach(r => {{
-    if (role === 'all') {{
-      r.style.display = '';
-    }} else {{
-      r.style.display = (r.getAttribute('data-role') === role) ? '' : 'none';
-    }}
-  }});
-}}
-
-function toggleProfileDropdown(e) {{
-  e.stopPropagation();
-  const dropdown = document.getElementById('profile-dropdown');
-  if (dropdown) dropdown.classList.toggle('hidden');
-}}
-
-document.addEventListener('click', function(e) {{
-  const profileDropdown = document.getElementById('profile-dropdown');
-  const profileBtn = document.getElementById('profile-btn');
-  if (profileDropdown && !profileDropdown.contains(e.target) && profileBtn && !profileBtn.contains(e.target)) {{
-    profileDropdown.classList.add('hidden');
-  }}
-}});
-</script>
-</body>
-</html>
-"""
-
-components.html(team_workspace_html, height=1280, scrolling=True)
-db.close()
+            with st.container():
+                info_col, role_col, action_col = st.columns([2.5, 1.2, 0.8])
+                with info_col:
+                    first_letter = escape(member.name[:1].upper()) if member.name else "U"
+                    st.markdown(
+                        f"""
+                        <div style="display:flex; align-items:center; gap:12px; padding:4px 0;">
+                            <div style="width:36px; height:36px; border-radius:50%; background:#E2E8F0; color:#1C274C; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px;">
+                                {first_letter}
+                            </div>
+                            <div>
+                                <div style="font-weight:700; color:#1A1D1F; font-size:0.95rem;">{escape(member.name)}</div>
+                                <div style="color:#6C7275; font-size:0.8rem;">{escape(member.email)}</div>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with role_col:
+                    st.markdown(
+                        f'<div style="padding-top:8px;"><span class="role-badge{owner_badge_class}">{escape(member.role)}{owner_text}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                with action_col:
+                    if not member.is_owner:
+                        st.write("")
+                        if st.button("Xóa", key=f"del_mem_{member.user_id}", use_container_width=True):
+                            try:
+                                team_service.remove_member(project.id, member.user_id)
+                                st.success(f"Đã gỡ {member.name} khỏi dự án.")
+                                st.rerun()
+                            except TeamServiceError as exc:
+                                st.error(f"Lỗi khi xóa thành viên: {exc}")
+                    else:
+                        st.markdown("<div style='padding-top:10px; color:#94A3B8; font-size:0.8rem; text-align:center;'>—</div>", unsafe_allow_html=True)
