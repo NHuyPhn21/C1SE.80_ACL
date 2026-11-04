@@ -1,15 +1,15 @@
 """ACL Queue Monitor — Figma Design Implemented (Pixel-Perfect Dashboard)."""
 
-import io
 import os
 from pathlib import Path
-import zipfile
 import streamlit as st
 
+from models.evaluation import EvaluationStatus
+from services.evaluation_service import get_evaluation_service
+from services.queue_service import QueueService, build_rendered_zip
 from utils.auth_session import require_auth
 from backend.database import SessionLocal
 from backend.models import ComicPage
-from backend.image_utils import BASE_DIR
 from backend.pipeline import run_full_acl_pipeline
 from utils.page_navigation import render_page_navigation
 
@@ -18,6 +18,7 @@ render_page_navigation()
 
 project_name = st.query_params.get("project", "Shonen Weekly #112")
 file_safe_project = project_name.replace(" ", "_").replace("#", "")
+queue_service = QueueService()
 
 if "acl_job" not in st.session_state:
     st.session_state["acl_job"] = {
@@ -224,12 +225,9 @@ if pending_files:
         prog_slot.progress(100)
         status_msg.success("✅ Toàn bộ trang truyện đã được dịch và xuất bản thành công!")
 
-# Đọc kết quả trong data/rendered_pages
-rendered_dir = BASE_DIR / "data" / "rendered_pages"
-rendered_dir.mkdir(parents=True, exist_ok=True)
-rendered_files = sorted(
-    list(rendered_dir.glob("final_*.*")), key=lambda f: f.stat().st_mtime, reverse=True
-)
+# Read real project progress and rendered artifacts after any pending job completes.
+queue_progress = queue_service.progress(project_name)
+rendered_files = queue_service.rendered_files(project_name)
 
 db = SessionLocal()
 page_map = {}
@@ -244,15 +242,16 @@ finally:
     db.close()
 
 # 4. Active Chapter Stepper Progress (Theo đúng Figma)
-rendered_count = len(rendered_files)
-pct_display = min(100, int((rendered_count / max(1, rendered_count)) * 100)) if rendered_count else 0
+rendered_count = queue_progress.completed_pages
+total_count = queue_progress.total_pages
+pct_display = queue_progress.percent
 
 st.markdown(
     f"""
     <div class="stepper-box">
         <div class="stepper-header">
             <div>📖 Active Chapter: {project_name}</div>
-            <div style="color:#1C274C;">{rendered_count} / {rendered_count} Pages Processed ({pct_display}%)</div>
+            <div style="color:#1C274C;">{rendered_count} / {total_count} Pages Processed ({pct_display}%)</div>
         </div>
         <div style="background:#EFEFEF; border-radius:9999px; height:8px; overflow:hidden;">
             <div style="background:#1C274C; height:8px; width:{pct_display}%;"></div>
@@ -277,29 +276,51 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 5. Ba Thẻ KPI Metrics (GPU, Latency, Errors)
+# 5. Queue metrics
 st.markdown(
-    """
+    f"""
     <div class="kpi-container">
         <div class="kpi-card">
-            <div class="kpi-title">GPU VRAM UTILIZATION</div>
-            <div class="kpi-value">15.4 GB <span style="font-size:1rem; font-weight:500; color:#6C7275;">/ 24.0 GB</span></div>
-            <div class="kpi-sub">NVIDIA RTX 4090 • <span style="color:#2E7D32; font-weight:600;">64% Load</span></div>
+            <div class="kpi-title">TOTAL PAGES</div>
+            <div class="kpi-value">{total_count}</div>
+            <div class="kpi-sub">Pages registered in SQLite</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-title">AVERAGE LATENCY</div>
-            <div class="kpi-value">12.8s <span style="font-size:1rem; font-weight:500; color:#6C7275;">/ page</span></div>
-            <div class="kpi-sub">Manga OCR + Inpainting • <span style="color:#1C274C; font-weight:600;">Optimal</span></div>
+            <div class="kpi-title">COMPLETED</div>
+            <div class="kpi-value">{rendered_count} <span style="font-size:1rem; font-weight:500; color:#6C7275;">({pct_display}%)</span></div>
+            <div class="kpi-sub">Rendered artifacts ready for export</div>
         </div>
         <div class="kpi-card">
             <div class="kpi-title">FAILED / RETRY QUEUE</div>
-            <div class="kpi-value">0 Errors <span style="font-size:1rem; font-weight:500; color:#2E7D32;">(100% Health)</span></div>
-            <div class="kpi-sub">Auto-Retry: Enabled (max 3)</div>
+            <div class="kpi-value">{queue_progress.failed_pages} Errors</div>
+            <div class="kpi-sub">Status read from comic_pages</div>
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
+
+# Preserve the frontend Accuracy Evaluation preview while the real evaluator is pending.
+evaluation_state_value = st.query_params.get("evaluation", "completed")
+try:
+    evaluation_state = EvaluationStatus(evaluation_state_value)
+except ValueError:
+    evaluation_state = EvaluationStatus.COMPLETED
+evaluation = get_evaluation_service().get_result(project_name, evaluation_state)
+with st.container(border=True):
+    st.subheader("Accuracy Evaluation")
+    st.caption("Preview contract for YOLO detection and Manga OCR evaluation.")
+    if evaluation.yolo and evaluation.ocr:
+        map_col, map95_col, precision_col, ocr_col = st.columns(4)
+        map_col.metric("YOLO mAP@0.5", f"{evaluation.yolo.map50 * 100:.1f}%")
+        map95_col.metric("mAP@0.5:0.95", f"{evaluation.yolo.map50_95 * 100:.1f}%")
+        precision_col.metric("Precision", f"{evaluation.yolo.precision * 100:.1f}%")
+        ocr_col.metric("OCR Accuracy", f"{evaluation.ocr.character_accuracy * 100:.1f}%")
+        st.caption(
+            f"Preview data - {evaluation.dataset_size} validation images - {evaluation.evaluated_at}"
+        )
+    else:
+        st.info(evaluation.error_message or "Evaluation result is not available yet.")
 
 # 6. Pipeline Task Execution Matrix
 st.subheader("Pipeline Task Execution Matrix (Batch #104)")
@@ -352,15 +373,12 @@ st.markdown(
 
 # 8. Tải ZIP toàn bộ chapter
 if rendered_files:
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fpath in rendered_files:
-            zf.write(fpath, arcname=fpath.name)
+    zip_data = build_rendered_zip(rendered_files)
 
     st.markdown("<div style='margin-top:1.5rem;'>", unsafe_allow_html=True)
     st.download_button(
         label="📥 Download Full Chapter (ZIP)",
-        data=zip_buffer.getvalue(),
+        data=zip_data,
         file_name=f"{file_safe_project}_Export.zip",
         mime="application/zip",
         use_container_width=True,
