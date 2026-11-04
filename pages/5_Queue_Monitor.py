@@ -10,7 +10,9 @@ import io
 import base64
 import zipfile
 import os
+import socket
 from pathlib import Path
+import psutil
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -46,6 +48,20 @@ except Exception:
 default_proj = user_projects[0].title if user_projects else "Local Manga"
 project_name = st.query_params.get("project", default_proj)
 file_safe_project = project_name.replace(" ", "_").replace("#", "")
+
+# Real hardware metrics from current host machine (zero mock Tokyo node)
+hostname = socket.gethostname()
+try:
+    ram_info = psutil.virtual_memory()
+    total_ram_gb = round(ram_info.total / (1024**3), 1)
+    used_ram_gb = round(ram_info.used / (1024**3), 1)
+    ram_pct = int(ram_info.percent)
+    cpu_cores = psutil.cpu_count(logical=True) or 4
+except Exception:
+    total_ram_gb = 8.0
+    used_ram_gb = 4.0
+    ram_pct = 50
+    cpu_cores = 4
 
 # 1. Pipeline Execution Logic (Huy's Real Backend Loop)
 pending_files = st.session_state.get("pending_files", [])
@@ -189,7 +205,7 @@ if total_pages > 0:
 else:
     throughput_headline = "Standby (Idle)"
     throughput_sub = "Awaiting Chapter Scans"
-    throughput_badge = "GPU Node Tokyo-01 • Ready"
+    throughput_badge = f"Node {hostname} • Ready"
     est_completion = "No active queue"
 
 # Stepper dynamic badges
@@ -388,9 +404,9 @@ font {{
         <input class="bg-transparent text-xs outline-none placeholder:text-on-surface-variant w-44 text-on-surface" placeholder="Search tasks (e.g. 13, OCR)..." type="text"/>
       </div>
 
-      <a onclick="alert('AI Daemon Tokyo-01: Status ONLINE, GPU VRAM 16GB, Idle.')" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="AI Daemon Status">
+      <a onclick="alert('Local Worker Node {hostname}: RAM {used_ram_gb}/{total_ram_gb} GB ({ram_pct}%), {cpu_cores} Cores.')" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="Host Hardware Status">
         <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
-        <span>Node Tokyo-01 (GPU idle)</span>
+        <span>Node: {hostname} (Ready)</span>
       </a>
 
       <!-- Notification Bell -->
@@ -509,14 +525,14 @@ font {{
       <!-- 3 KPI METRIC CARDS (Matching Image 5) -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        <!-- Card 1: RUNNER NODE -->
+        <!-- Card 1: RUNNER NODE (100% Real Hardware Metrics) -->
         <div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-[#E4DFD6] flex items-center justify-between">
           <div class="flex-1 pr-4">
             <span class="font-code text-xs uppercase tracking-wider text-on-surface-variant font-semibold block mb-1">RUNNER NODE</span>
-            <span class="font-headline text-lg font-bold text-on-surface block">Node Tokyo-01 (Active)</span>
-            <div class="font-code text-xs text-on-surface-variant mt-1">VRAM: 15.4 GB / 24.0 GB • CUDA 12.2</div>
-            <div class="w-full bg-[#E8EAED] rounded-full h-1.5 mt-2 overflow-hidden">
-              <div class="bg-[#2E7D32] h-1.5 rounded-full" style="width: 64%"></div>
+            <span class="font-headline text-lg font-bold text-on-surface block">Node {hostname} (Active)</span>
+            <div class="font-code text-xs text-on-surface-variant mt-1">RAM: {used_ram_gb} GB / {total_ram_gb} GB • {cpu_cores} Cores</div>
+            <div class="w-full bg-[#E8EAED] rounded-full h-1.5 mt-2 overflow-hidden" title="Host RAM Load: {ram_pct}%">
+              <div class="bg-[#2E7D32] h-1.5 rounded-full transition-all duration-500" style="width: {ram_pct}%"></div>
             </div>
           </div>
           <div class="w-12 h-12 rounded-xl bg-[#F0F4F8] flex items-center justify-center text-primary-container shrink-0">
@@ -627,7 +643,7 @@ font {{
         <div class="flex items-center justify-between px-5 py-2.5 bg-[#1b1e25] border-b border-[#2d3139]">
           <div class="flex items-center gap-2.5">
             <span class="w-2.5 h-2.5 rounded-full { 'bg-[#3fb950] animate-pulse' if total_pages > 0 else 'bg-[#717971]' }"></span>
-            <span class="font-bold text-white font-code text-xs tracking-wide notranslate" translate="no">Live Worker Stream: worker-tokyo-01-daemon.py</span>
+            <span class="font-bold text-white font-code text-xs tracking-wide notranslate" translate="no">Live Worker Stream: worker-{hostname.lower()}-daemon.py</span>
           </div>
           <div class="flex items-center gap-3">
             <span class="inline-flex items-center gap-1.5 text-[11px] { 'text-[#3fb950]' if total_pages > 0 else 'text-[#8b949e]' } font-medium notranslate" translate="no">

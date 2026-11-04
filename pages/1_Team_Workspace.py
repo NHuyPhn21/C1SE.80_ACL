@@ -12,6 +12,7 @@ from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 
+import socket
 from utils.auth_session import require_auth
 from backend.database import SessionLocal, init_db
 from backend.models import Chapter, ComicPage, Project, ProjectMembership, User
@@ -19,6 +20,7 @@ from services.workspace_service import WorkspaceService
 
 # Enforce authentication guard
 user = require_auth()
+hostname = socket.gethostname()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 user_name = user.full_name or "Phan Van Quan"
@@ -391,9 +393,10 @@ font {{
         <input class="bg-transparent text-xs outline-none placeholder:text-on-surface-variant w-36 text-on-surface" placeholder="Filter workspace..." type="text"/>
       </div>
 
-      <a onclick="navigateParent('queue-monitor')" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="Node Tokyo-01 Status">
+      <!-- Node Status Badge -->
+      <a onclick="navigateParent('queue-monitor')" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" title="Host Node Status">
         <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
-        <span>Node Tokyo-01 (GPU idle)</span>
+        <span>Node: {hostname} (Ready)</span>
       </a>
 
       <!-- Notification Bell -->

@@ -8,6 +8,7 @@ Modal: ACL-04-MODAL: Create New Project Modal Overlay.
 
 from html import escape
 import os
+import socket
 from pathlib import Path
 
 import streamlit as st
@@ -20,6 +21,7 @@ from services.workspace_service import WorkspaceService
 
 # Enforce authentication guard
 user = require_auth()
+hostname = socket.gethostname()
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 user_name = user.full_name or "Phan Van Quan"
@@ -344,10 +346,10 @@ font {{
         <input id="header-search-input" class="bg-transparent text-xs outline-none placeholder:text-on-surface-variant w-44 text-on-surface" placeholder="Filter batches or series..." type="text"/>
       </div>
 
-      <!-- Node Tokyo-01 Status Badge -->
-      <a class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" onclick="navigateParent('queue-monitor')" title="Inspect Node Tokyo-01 in Queue Monitor">
+      <!-- Node Status Badge -->
+      <a class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8EDF4] text-[#414754] border border-[#D0D7DE] font-code text-xs font-medium cursor-pointer" onclick="navigateParent('queue-monitor')" title="Inspect Node in Queue Monitor">
         <span class="material-symbols-outlined text-[15px] text-[#57606A]">memory</span>
-        <span>Node Tokyo-01 (GPU idle)</span>
+        <span>Node: {hostname} (Ready)</span>
       </a>
 
       <!-- Notification Bell -->
