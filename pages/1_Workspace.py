@@ -1,112 +1,111 @@
-"""Dynamic project Workspace backed by SQLite."""
+"""Native Streamlit project workspace backed by SQLite."""
 
-from html import escape
+from pathlib import Path
 
 import streamlit as st
 
-from services.workspace_service import WorkspaceService, WorkspaceServiceError
+from backend.database import SessionLocal, init_db
+from backend.models import Project, ProjectMembership, User
 from utils.auth_session import require_auth
 from utils.page_navigation import render_page_navigation
 
 
 user = require_auth()
 render_page_navigation()
+init_db()
 
+base_dir = Path(__file__).parents[1]
+thumbnail_dir = base_dir / "assets" / "thumbnails"
+
+db = SessionLocal()
 try:
-    user_id = int(user.id)
-except ValueError:
-    st.error("Your local account is invalid. Please sign out and register again.")
-    st.stop()
-
-workspace_service = WorkspaceService()
-
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-    html, body, [data-testid="stAppViewContainer"] { font-family:'Plus Jakarta Sans',sans-serif; background:#F8F9FA; color:#1A1D1F; }
-    .workspace-title { font-size:2rem; font-weight:800; margin:.5rem 0 0; }
-    .workspace-subtitle { color:#6C7275; margin:.25rem 0 1.5rem; }
-    .project-card { background:#FFF; border:1px solid #EAEAEA; border-radius:16px; padding:1.35rem; min-height:210px; box-shadow:0 8px 30px rgba(20,25,35,.04); }
-    .project-card h3 { margin:0; font-size:1.1rem; }
-    .project-desc { color:#6C7275; font-size:.82rem; min-height:42px; margin:.5rem 0 1.3rem; }
-    .progress-track { height:7px; border-radius:999px; background:#E8EAED; overflow:hidden; }
-    .progress-fill { height:100%; border-radius:inherit; background:#25326F; }
-    div.stButton > button { border-radius:999px; font-weight:700; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-@st.dialog("Create New Project")
-def create_project_dialog() -> None:
-    with st.form("create_project_form"):
-        title = st.text_input("Project title", placeholder="Series or chapter name")
-        description = st.text_area(
-            "Description", placeholder="Language pair, editorial notes, or scope"
+    db_user = db.query(User).filter_by(email=user.email).first()
+    if not db_user:
+        db_user = User(
+            username=user.full_name or user.email.split("@")[0],
+            email=user.email,
+            password_hash="session-authenticated",
+            role="editor",
         )
-        submitted = st.form_submit_button("Create project", use_container_width=True)
-    if submitted:
-        try:
-            workspace_service.create_project(user_id, title, description)
-            st.success("Project created successfully.")
-            st.rerun()
-        except WorkspaceServiceError as exc:
-            st.error(str(exc))
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
 
-
-header_col, action_col = st.columns([2.5, 1])
-with header_col:
-    st.caption("ACL Studio / Projects")
-    st.markdown('<h1 class="workspace-title">Projects</h1>', unsafe_allow_html=True)
-    st.markdown(
-        '<p class="workspace-subtitle">Manage localization projects from live database records.</p>',
-        unsafe_allow_html=True,
-    )
-with action_col:
-    st.write("")
-    if st.button("Create New Project", use_container_width=True):
-        create_project_dialog()
-
-projects = workspace_service.list_projects(user_id)
-if not projects:
-    with st.container(border=True):
-        st.subheader("No projects yet")
-        st.write("Create your first project to start uploading and processing manga pages.")
-else:
-    for start in range(0, len(projects), 3):
-        columns = st.columns(3, gap="medium")
-        for column, project in zip(columns, projects[start : start + 3]):
-            with column:
-                st.markdown(
-                    f"""
-                    <article class="project-card">
-                      <div style="display:flex;justify-content:space-between;gap:1rem;align-items:start">
-                        <h3>{escape(project.title)}</h3>
-                        <code>#{project.id:02d}</code>
-                      </div>
-                      <p class="project-desc">{escape(project.description)}</p>
-                      <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:.45rem;color:#6C7275">
-                        <span>{project.completed_pages}/{project.total_pages} pages complete</span>
-                        <strong>{project.progress_percent}%</strong>
-                      </div>
-                      <div class="progress-track"><div class="progress-fill" style="width:{project.progress_percent}%"></div></div>
-                    </article>
-                    """,
-                    unsafe_allow_html=True,
+    if st.session_state.pop("workspace_create_project", False):
+        title = st.session_state.pop("new_project_title", "").strip()
+        description = st.session_state.pop("new_project_description", "").strip()
+        if title:
+            project = Project(
+                owner_id=db_user.id,
+                title=title,
+                description=description or "Japanese → Vietnamese",
+            )
+            db.add(project)
+            db.commit()
+            db.refresh(project)
+            db.add(
+                ProjectMembership(
+                    project_id=project.id,
+                    user_id=db_user.id,
+                    project_role="Owner",
                 )
-                if st.button(
-                    "Open Chapter Studio",
-                    key=f"open_project_{project.id}",
-                    use_container_width=True,
-                ):
-                    st.query_params["project"] = project.title
-                    st.switch_page("pages/2_Chapter_Studio.py")
+            )
+            db.commit()
 
-total_pages = sum(project.total_pages for project in projects)
-completed_pages = sum(project.completed_pages for project in projects)
-metric_projects, metric_pages, metric_completed = st.columns(3)
-metric_projects.metric("Accessible Projects", len(projects))
-metric_pages.metric("Total Pages", total_pages)
-metric_completed.metric("Completed Pages", completed_pages)
+    projects = db.query(Project).order_by(Project.id.asc()).all()
+    project_cards = []
+    for project in projects:
+        pages = [page for chapter in project.chapters for page in chapter.pages]
+        completed = sum(
+            1 for page in pages
+            if page.status == "COMPLETED" or bool(page.rendered_path)
+        )
+        project_cards.append((project, len(pages), completed))
+finally:
+    db.close()
+
+st.title("Workspace")
+st.caption("Projects and pipeline status from SQLite")
+
+with st.expander("Create new project"):
+    with st.form("create_project"):
+        st.text_input("Project name", key="new_project_title")
+        st.text_input(
+            "Description",
+            value="Japanese → Vietnamese",
+            key="new_project_description",
+        )
+        if st.form_submit_button("Create project"):
+            st.session_state["workspace_create_project"] = True
+            st.rerun()
+
+if not project_cards:
+    st.info("Chưa có project nào. Hãy tạo project mới hoặc mở Chapter Studio để upload.")
+
+for project, total_pages, completed_pages in project_cards:
+    progress = round(completed_pages / total_pages * 100) if total_pages else 0
+    with st.container(border=True):
+        left, right = st.columns([1.5, 1])
+        with left:
+            st.subheader(project.title)
+            st.caption(project.description or "Japanese → Vietnamese")
+            st.progress(progress, text=f"{completed_pages}/{total_pages} pages rendered")
+            st.caption(f"Status: {'Completed' if total_pages and progress == 100 else 'Ready for ingestion'}")
+        with right:
+            thumbnail_name = (
+                "one_piece_1115.jpg"
+                if "one piece" in project.title.lower()
+                else "jujutsu_kaisen_sp.jpg"
+                if "jujutsu" in project.title.lower()
+                else "shonen_112.jpg"
+            )
+            thumbnail = thumbnail_dir / thumbnail_name
+            if thumbnail.exists():
+                st.image(str(thumbnail), use_container_width=True)
+            if st.button("Open Chapter Studio", key=f"chapter_{project.id}"):
+                st.query_params["project"] = project.title
+                st.switch_page("pages/2_Chapter_Studio.py")
+            if total_pages:
+                if st.button("Open Queue Monitor", key=f"queue_{project.id}"):
+                    st.query_params["project"] = project.title
+                    st.switch_page("pages/5_Queue_Monitor.py")
