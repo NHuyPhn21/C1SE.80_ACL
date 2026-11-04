@@ -18,3 +18,4 @@ backups/
 *_backup.py
 *.sqlite3
 .env
+.acl_config_secret

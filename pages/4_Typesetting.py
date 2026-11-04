@@ -2,7 +2,6 @@
 
 import json
 import os
-from pathlib import Path
 from PIL import Image
 import streamlit as st
 
@@ -12,8 +11,11 @@ from backend.models import ComicPage, TextRegion
 from backend.image_utils import (
     BASE_DIR,
     resolve_project_path,
-    process_comic_page,
     _deduplicate_db_regions,
+)
+from services.typesetting_service import (
+    TypesettingServiceError,
+    save_translation_and_render,
 )
 from utils.page_navigation import render_page_navigation
 
@@ -266,25 +268,16 @@ with col_inspector:
         # Nút Re-render ảnh tức thì
         if st.button("⚡ Lưu & Vẽ lại trang (Re-Render Now)", use_container_width=True):
             if current_page:
-                db_action = SessionLocal()
                 try:
-                    r_target = db_action.query(TextRegion).filter(TextRegion.id == selected_item["id"]).first()
-                    if r_target:
-                        r_target.translated_text = new_vi_text.strip()
-                        db_action.commit()
-
-                    # Kích hoạt inpainting và căn chữ lại
-                    updated_final = process_comic_page(page_id=current_page.id, use_lama_api=False)
-                    p_obj = db_action.query(ComicPage).filter(ComicPage.id == current_page.id).first()
-                    if p_obj and updated_final:
-                        p_obj.rendered_path = str(Path(updated_final).relative_to(BASE_DIR)).replace("\\", "/")
-                        p_obj.status = "COMPLETED"
-                        db_action.commit()
-
+                    save_translation_and_render(
+                        page_id=current_page.id,
+                        region_id=selected_item["id"],
+                        translated_text=new_vi_text,
+                    )
                     st.success("✅ Đã cập nhật câu thoại và vẽ lại trang thành công!")
                     st.rerun()
-                finally:
-                    db_action.close()
+                except TypesettingServiceError as exc:
+                    st.error(str(exc))
 
     st.markdown("</div>", unsafe_allow_html=True)
 
