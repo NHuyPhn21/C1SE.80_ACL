@@ -1,4 +1,4 @@
-"""Dynamic project Workspace backed by SQLite (100% Streamlit Native, High-End SaaS UI)."""
+"""Dynamic project Workspace backed by SQLite (100% Streamlit Native, Stitch UI Fixed Sidebar)."""
 
 from html import escape
 import os
@@ -23,19 +23,15 @@ except (ValueError, TypeError):
 workspace_service = WorkspaceService()
 
 # 1. Đọc thông số phần cứng thật (không số giả)
-hardware_info = "Local Worker"
 hostname = "Local-Node"
 cores = 4
 try:
     hostname = socket.gethostname()
-    vm = psutil.virtual_memory()
-    total_ram = round(vm.total / (1024**3), 1)
-    used_ram = round(vm.used / (1024**3), 1)
-    ram_pct = int(vm.percent)
     cores = os.cpu_count() or 1
-    hardware_info = f"Node {hostname} • RAM {used_ram}/{total_ram} GB ({ram_pct}%) • {cores} Cores"
 except Exception:
-    hardware_info = "Node Worker (Active)"
+    pass
+
+user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
 
 # 2. Tính toán dung lượng lưu trữ thực tế từ thư mục data/
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -48,7 +44,7 @@ if data_dir.exists():
 storage_mb = round(total_bytes / (1024 * 1024), 1)
 storage_display = f"{storage_mb} MB" if storage_mb < 1024 else f"{round(storage_mb / 1024, 1)} GB"
 
-# 3. CSS cục bộ chuyên nghiệp (100% tự chứa, không phụ thuộc Tailwind CDN bên ngoài)
+# 3. CSS cục bộ chuyên nghiệp (Khôi phục Sidebar & Top Navbar chuẩn Stitch)
 st.markdown(
     """
     <style>
@@ -60,65 +56,117 @@ st.markdown(
         color: #1A1D1F !important;
     }
     
-    /* Top Header Bar */
-    .top-header-wrap {
+    /* Force Left Sidebar Always Visible & Styled like Stitch */
+    [data-testid="stSidebar"] {
+        display: block !important;
+        visibility: visible !important;
+        transform: none !important;
+        background-color: #FFFFFF !important;
+        border-right: 1px solid #EAEAEA !important;
+        width: 250px !important;
+        min-width: 250px !important;
+    }
+    [data-testid="stSidebarCollapsedControl"] {
+        display: none !important;
+    }
+    [data-testid="stMainBlockContainer"] {
+        padding: 0 2rem 2rem 2rem !important;
+    }
+    
+    /* Top Navbar matching Image 2 */
+    .top-nav-wrap {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.85rem 0 1.25rem 0;
+        padding: 1rem 0;
         border-bottom: 1px solid #EAEAEA;
         margin-bottom: 1.5rem;
     }
-    .brand-title-wrap {
+    .top-breadcrumb-box {
         display: flex;
-        align-items: baseline;
-        gap: 3px;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.9rem;
     }
-    .brand-logo-text {
-        font-size: 24px;
-        font-weight: 900;
-        color: #1C274C;
-        letter-spacing: -0.03em;
+    .top-breadcrumb-bold {
+        font-weight: 800;
+        color: #1A1D1F;
     }
-    .brand-logo-dot {
-        display: inline-block;
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background-color: #2563EB;
-        margin-bottom: 2px;
+    .top-breadcrumb-slash {
+        color: #94A3B8;
     }
-    .brand-bar-divider {
-        height: 18px;
-        width: 1px;
-        background: #D1D5DB;
-        margin: 0 12px;
+    .top-breadcrumb-current {
+        color: #64748B;
+        font-weight: 500;
     }
-    .brand-slogan {
-        font-size: 12px;
-        font-weight: 700;
-        color: #475569;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
+    
+    .top-right-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
     }
-    .node-status-pill {
-        background: #E8F5E9;
-        color: #2E7D32;
-        padding: 5px 14px;
+    .search-mock-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #F1F5F9;
+        border: 1px solid #E2E8F0;
         border-radius: 9999px;
-        font-size: 11px;
-        font-weight: 700;
+        padding: 6px 16px;
+        font-size: 0.8rem;
+        color: #64748B;
+    }
+    .node-status-ready {
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        background: #E8F5E9;
+        color: #2E7D32;
         border: 1px solid #C8E6C9;
+        border-radius: 9999px;
+        padding: 5px 14px;
+        font-size: 0.78rem;
+        font-weight: 700;
     }
-    .node-green-dot {
-        width: 7px;
-        height: 7px;
-        background: #2E7D32;
+    .icon-badge-box {
+        width: 34px;
+        height: 34px;
         border-radius: 50%;
-        box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        color: #475569;
+        font-size: 14px;
+    }
+    .notif-pink-dot {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background-color: #EC4899;
+    }
+    .avatar-pill-box {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+    .avatar-circle-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #1C274C;
+        color: #FFFFFF;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 12px;
     }
 
     /* 4 Thẻ KPI Stat Cards */
@@ -264,21 +312,35 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 4. Top Header Bar
+# 4. Top Navbar (Chuẩn xác 100% theo Ảnh 2 của bạn)
 st.markdown(
     f"""
-    <div class="top-header-wrap">
-        <div style="display:flex; align-items:center;">
-            <div class="brand-title-wrap">
-                <span class="brand-logo-text">ACL</span>
-                <span class="brand-logo-dot"></span>
-            </div>
-            <div class="brand-bar-divider"></div>
-            <span class="brand-slogan">Automated Comic Localization</span>
+    <div class="top-nav-wrap">
+        <div class="top-breadcrumb-box">
+            <span class="top-breadcrumb-bold">ACL Studio</span>
+            <span class="top-breadcrumb-slash">/</span>
+            <span class="top-breadcrumb-current">Projects</span>
         </div>
-        <div class="node-status-pill">
-            <span class="node-green-dot"></span>
-            {hardware_info}
+        <div class="top-right-group">
+            <div class="search-mock-pill">
+                <span>🔍</span>
+                <span>Filter batches or series...</span>
+            </div>
+            <div class="node-status-ready">
+                <span>⚙</span>
+                <span>Node: {hostname} (Ready)</span>
+            </div>
+            <div class="icon-badge-box">
+                <span>🔔</span>
+                <span class="notif-pink-dot"></span>
+            </div>
+            <div class="icon-badge-box">
+                <span>🎛️</span>
+            </div>
+            <div class="avatar-pill-box">
+                <div class="avatar-circle-icon">{user_initials}</div>
+                <span style="font-size:10px; color:#64748B;">▼</span>
+            </div>
         </div>
     </div>
     """,
@@ -404,7 +466,6 @@ elif filter_status == "Đã hoàn thành (100%)":
 if not display_projects:
     st.info("Không tìm thấy bộ truyện nào phù hợp với bộ lọc hiện tại.")
 else:
-    # Hiển thị dạng lưới 3 cột
     for start in range(0, len(display_projects), 3):
         row_projects = display_projects[start : start + 3]
         columns = st.columns(3, gap="medium")
@@ -444,7 +505,6 @@ else:
                     st.query_params["project"] = project.title
                     st.switch_page("pages/2_Chapter_Studio.py")
 
-        # Nếu hàng cuối cùng còn chỗ trống, hiển thị 1 thẻ Dashed tạo dự án mới để lấp đầy khoảng trắng
         if len(row_projects) < 3:
             remaining_col = columns[len(row_projects)]
             with remaining_col:
