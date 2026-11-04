@@ -9,9 +9,10 @@ from backend.models import TextRegion
 
 load_dotenv()
 
-# Khởi tạo Client theo chuẩn Google GenAI SDK mới
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+def _gemini_client():
+    """Read the latest key so Settings changes apply without restarting Streamlit."""
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    return genai.Client(api_key=api_key) if api_key else None
 
 
 def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
@@ -33,6 +34,7 @@ def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
 
     candidate_models = ["gemini-3.8-flash"]
 
+    client = _gemini_client()
     if client:
         for model_name in candidate_models:
             # Chỉ thử tối đa 2 lần, nghỉ ngắn 2 giây để không làm chậm Pipeline
