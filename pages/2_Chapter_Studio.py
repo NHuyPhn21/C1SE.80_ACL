@@ -11,7 +11,6 @@ user = require_auth()
 render_page_navigation()
 
 project_name = st.query_params.get("project", "Shonen Weekly #112")
-raw_manga_dir = BASE_DIR / "data" / "raw_images" / "AisazuNihaIrarenai"
 uploads_dir = BASE_DIR / "data" / "raw_images" / "uploads"
 uploads_dir.mkdir(parents=True, exist_ok=True)
 
@@ -229,14 +228,6 @@ if uploaded_files:
             f_out.write(up_file.getbuffer())
         final_targets_to_run.append(str(dest_file))
 
-# Nếu chưa upload thì kiểm tra thư mục mẫu
-if not final_targets_to_run and raw_manga_dir.exists():
-    sample_files = sorted(
-        [f for f in raw_manga_dir.iterdir() if f.suffix.lower() in {".jpg", ".png", ".webp"}]
-    )
-    if sample_files:
-        final_targets_to_run = [str(sample_files[0])]  # Mặc định chọn 1 trang để chạy
-
 # 4. Uploaded Pages Card (Staging List)
 items_html = ""
 display_files = final_targets_to_run[:5]
@@ -322,10 +313,10 @@ with c_bar_btn:
         else:
             st.session_state["pending_files"] = final_targets_to_run
             st.session_state["acl_job"] = {
-                "status": "pending",
-                "current_file": Path(final_targets_to_run[0]).name,
-                "progress_pct": 5,
-                "step_name": f"Khởi tạo pipeline cho {Path(final_targets_to_run[0]).name}...",
+                "status": "queued",
+                "current_file": "",
+                "progress_pct": 0,
+                "step_name": "Đang chờ Queue Monitor...",
                 "error_msg": "",
             }
             st.switch_page("pages/5_Queue_Monitor.py")
