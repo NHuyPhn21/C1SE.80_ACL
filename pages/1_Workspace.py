@@ -267,14 +267,14 @@ font {{
 <!-- FIXED LEFT SIDEBAR (Matching Image 3) -->
 <aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between py-5 border-r border-[#E4DFD6]">
   <div>
-    <!-- Brand / Logo Area: Square Badge with 'A' -->
-    <div class="px-5 mb-6 flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-primary-container text-on-primary flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
-        A
+    <!-- Brand / Logo Area: Matching Image 4 (Login Brand Mark) -->
+    <div class="px-4 mb-6 flex items-center gap-2.5 cursor-pointer" onclick="navigateParent('workspace')" title="ACL - Automated Comic Localization">
+      <div class="w-10 h-10 rounded-xl bg-white border border-[#D0D7DE] text-[#1C274C] flex items-center justify-center font-headline font-extrabold text-[13px] shadow-sm shrink-0 tracking-tight">
+        ACL
       </div>
       <div class="min-w-0">
-        <h1 class="font-headline text-[17px] font-bold text-on-surface tracking-tight leading-none">ACL</h1>
-        <p class="font-code text-[11px] text-on-surface-variant mt-1 leading-snug truncate">v2.4 Editorial Core</p>
+        <h1 class="font-headline text-[16px] font-bold text-on-surface tracking-tight leading-none">ACL</h1>
+        <p class="text-[10px] text-on-surface-variant font-medium mt-1 leading-tight truncate">Automated Comic Localization</p>
       </div>
     </div>
     

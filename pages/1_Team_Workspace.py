@@ -312,14 +312,14 @@ font {{
 <!-- FIXED LEFT SIDEBAR (Matching Image 4) -->
 <aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between py-5 border-r border-[#E4DFD6]">
   <div>
-    <!-- Logo Area -->
-    <div class="px-5 mb-6 flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-primary-container text-on-primary flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
-        A
+    <!-- Logo Area: Matching Image 4 (Login Brand Mark) -->
+    <div class="px-4 mb-6 flex items-center gap-2.5 cursor-pointer" onclick="navigateParent('workspace')" title="ACL - Automated Comic Localization">
+      <div class="w-10 h-10 rounded-xl bg-white border border-[#D0D7DE] text-[#1C274C] flex items-center justify-center font-headline font-extrabold text-[13px] shadow-sm shrink-0 tracking-tight">
+        ACL
       </div>
       <div class="min-w-0">
-        <h1 class="font-headline text-[17px] font-bold text-on-surface tracking-tight leading-none">ACL</h1>
-        <p class="font-code text-[11px] text-on-surface-variant mt-1 leading-snug truncate">v2.4 Editorial Core</p>
+        <h1 class="font-headline text-[16px] font-bold text-on-surface tracking-tight leading-none">ACL</h1>
+        <p class="text-[10px] text-on-surface-variant font-medium mt-1 leading-tight truncate">Automated Comic Localization</p>
       </div>
     </div>
     
@@ -409,15 +409,45 @@ font {{
         </button>
       </div>
 
-      <!-- User Profile Menu -->
-      <div class="relative pl-2 border-l border-[#E4DFD6] flex items-center gap-3">
-        <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center font-bold text-xs text-on-primary shadow-sm notranslate" translate="no" title="{escape(user_name)}">
-          {user_initials}
+      <!-- User Profile Menu (Matching Image 1) -->
+      <div class="relative pl-2 border-l border-[#E4DFD6]">
+        <button id="profile-btn" onclick="toggleProfileDropdown(event)" class="flex items-center gap-1.5 p-1 rounded-full hover:bg-surface-container transition-colors cursor-pointer group" title="Account Menu">
+          <div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center font-bold text-xs text-on-primary shadow-sm notranslate" translate="no" title="{escape(user_name)}">
+            {user_initials}
+          </div>
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-on-surface transition-transform duration-200">expand_more</span>
+        </button>
+
+        <!-- Profile Popover Dropdown -->
+        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-surface-container-lowest rounded-2xl shadow-xl border border-[#E4DFD6] py-2 z-50 text-left transition-all">
+          <div class="px-4 py-3 border-b border-[#E4DFD6]/70 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center font-bold text-sm text-on-primary shrink-0 notranslate" translate="no">
+              {user_initials}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-bold text-on-surface truncate notranslate" translate="no">{escape(user_name)}</div>
+              <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E8EDF4] text-primary-container font-code text-[11px] font-semibold mt-0.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+                <span>Lead Editor</span>
+              </div>
+            </div>
+          </div>
+          <div class="py-1">
+            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('settings')">
+              <span class="material-symbols-outlined text-[18px]">manage_accounts</span>
+              <span>Personal Settings</span>
+            </a>
+            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer" onclick="navigateParent('workspace')">
+              <span class="material-symbols-outlined text-[18px]">folder</span>
+              <span>Workspace Projects</span>
+            </a>
+            <div class="border-t border-[#E4DFD6]/70 my-1"></div>
+            <a class="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#BA1A1A] hover:bg-[#FFDAD6]/40 transition-colors cursor-pointer" onclick="navigateParent('login?logout=1')">
+              <span class="material-symbols-outlined text-[18px] text-[#BA1A1A]">logout</span>
+              <span>Sign Out</span>
+            </a>
+          </div>
         </div>
-        <a class="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-[#BA1A1A] hover:bg-[#FFDAD6]/40 px-2.5 py-1 rounded-lg cursor-pointer transition-all" onclick="navigateParent('login?logout=1')" title="Sign out of ACL Studio">
-          <span class="material-symbols-outlined text-[16px]">logout</span>
-          <span>Sign Out</span>
-        </a>
       </div>
     </div>
   </header>
@@ -654,6 +684,20 @@ function filterMembers(role) {{
     }}
   }});
 }}
+
+function toggleProfileDropdown(e) {{
+  e.stopPropagation();
+  const dropdown = document.getElementById('profile-dropdown');
+  if (dropdown) dropdown.classList.toggle('hidden');
+}}
+
+document.addEventListener('click', function(e) {{
+  const profileDropdown = document.getElementById('profile-dropdown');
+  const profileBtn = document.getElementById('profile-btn');
+  if (profileDropdown && !profileDropdown.contains(e.target) && profileBtn && !profileBtn.contains(e.target)) {{
+    profileDropdown.classList.add('hidden');
+  }}
+}});
 </script>
 </body>
 </html>
