@@ -12,7 +12,7 @@ def init_db():
     import backend.models 
     
     Base.metadata.create_all(bind=engine)
-    print("Đã khởi tạo Database acl.db và các bảng thành công!")
+    print("Database acl.db and tables initialized successfully.")
 
 if __name__ == "__main__":
     init_db()
