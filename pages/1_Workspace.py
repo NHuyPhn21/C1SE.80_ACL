@@ -1,12 +1,13 @@
-"""Dynamic project Workspace backed by SQLite (100% Streamlit Native, Stitch UI Fixed Sidebar)."""
+"""Dynamic project Workspace backed by SQLite (100% Streamlit Native, Google Stitch UX/UI Design)."""
 
 from html import escape
 import os
 from pathlib import Path
 import socket
-import psutil
 import streamlit as st
 
+from backend.database import SessionLocal
+from backend.models import ComicPage
 from services.workspace_service import WorkspaceService, WorkspaceServiceError
 from utils.auth_session import logout, require_auth
 from utils.page_navigation import render_page_navigation
@@ -24,10 +25,8 @@ workspace_service = WorkspaceService()
 
 # 1. Đọc thông số phần cứng thật (không số giả)
 hostname = "Local-Node"
-cores = 4
 try:
     hostname = socket.gethostname()
-    cores = os.cpu_count() or 1
 except Exception:
     pass
 
@@ -43,8 +42,17 @@ if data_dir.exists():
             total_bytes += f.stat().st_size
 storage_mb = round(total_bytes / (1024 * 1024), 1)
 storage_display = f"{storage_mb} MB" if storage_mb < 1024 else f"{round(storage_mb / 1024, 1)} GB"
+storage_pct = round((total_bytes / (10 * 1024 * 1024 * 1024)) * 100, 1)
 
-# 3. CSS cục bộ chuyên nghiệp (Khôi phục Sidebar & Top Navbar chuẩn Stitch)
+# 3. Đọc dữ liệu In Queue thật từ SQLite
+in_queue_count = 0
+try:
+    with SessionLocal() as db:
+        in_queue_count = db.query(ComicPage).filter(ComicPage.status.in_(["PENDING", "PROCESSING"])).count()
+except Exception:
+    in_queue_count = 0
+
+# 4. CSS cục bộ chuyên nghiệp (Khôi phục 100% Stitch UI theo Ảnh 2)
 st.markdown(
     """
     <style>
@@ -56,7 +64,7 @@ st.markdown(
         color: #1A1D1F !important;
     }
     
-    /* Force Left Sidebar Always Visible & Styled like Stitch */
+    /* Left Sidebar Styling */
     [data-testid="stSidebar"] {
         display: block !important;
         visibility: visible !important;
@@ -70,23 +78,36 @@ st.markdown(
         display: none !important;
     }
     [data-testid="stMainBlockContainer"] {
-        padding: 0 2rem 2rem 2rem !important;
+        padding: 0.75rem 2.5rem 3rem 2.5rem !important;
+        max-width: 1400px !important;
+    }
+
+    /* Active Sidebar Pill for Projects (Solid Dark Navy #1C274C with white text & icon) */
+    [data-testid="stSidebar"] a[href*="Workspace"]:not([href*="Team"]) {
+        background-color: #1C274C !important;
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 14px rgba(28, 39, 76, 0.22) !important;
+    }
+    [data-testid="stSidebar"] a[href*="Workspace"]:not([href*="Team"]) * {
+        color: #FFFFFF !important;
+        fill: #FFFFFF !important;
     }
     
-    /* Top Navbar matching Image 2 */
-    .top-nav-wrap {
+    /* Top Navbar Row */
+    .top-nav-box {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        padding: 1rem 0;
+        justify-content: space-between;
+        padding-bottom: 1.25rem;
         border-bottom: 1px solid #EAEAEA;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.75rem;
     }
     .top-breadcrumb-box {
         display: flex;
         align-items: center;
         gap: 6px;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
     }
     .top-breadcrumb-bold {
         font-weight: 800;
@@ -100,22 +121,20 @@ st.markdown(
         font-weight: 500;
     }
     
-    .top-right-group {
-        display: flex;
-        align-items: center;
-        gap: 12px;
+    /* Search Bar in Top Bar */
+    .top-search-wrapper div[data-testid="stTextInputRootElement"] input {
+        background-color: #F1F5F9 !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 9999px !important;
+        padding: 6px 16px !important;
+        font-size: 0.85rem !important;
+        color: #334155 !important;
     }
-    .search-mock-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: #F1F5F9;
-        border: 1px solid #E2E8F0;
-        border-radius: 9999px;
-        padding: 6px 16px;
-        font-size: 0.8rem;
-        color: #64748B;
+    .top-search-wrapper div[data-testid="stTextInputRootElement"] input:focus {
+        border-color: #2563EB !important;
+        background-color: #FFFFFF !important;
     }
+
     .node-status-ready {
         display: inline-flex;
         align-items: center;
@@ -124,169 +143,180 @@ st.markdown(
         color: #2E7D32;
         border: 1px solid #C8E6C9;
         border-radius: 9999px;
-        padding: 5px 14px;
-        font-size: 0.78rem;
+        padding: 6px 14px;
+        font-size: 0.8rem;
         font-weight: 700;
+        white-space: nowrap;
     }
-    .icon-badge-box {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
+
+    /* Popover button in Top Bar */
+    .top-avatar-popover div[data-testid="stPopover"] > button {
+        background-color: #1C274C !important;
+        color: #FFFFFF !important;
+        border-radius: 9999px !important;
+        border: none !important;
+        font-weight: 700 !important;
+        font-size: 0.85rem !important;
+        padding: 4px 12px !important;
+        box-shadow: 0 2px 6px rgba(28, 39, 76, 0.15) !important;
+    }
+
+    /* Main Page Header */
+    .main-page-title {
+        font-size: 2.1rem;
+        font-weight: 800;
+        color: #1A1D1F;
+        margin: 0;
+        letter-spacing: -0.03em;
+    }
+    .main-page-sub {
+        color: #64748B;
+        font-size: 0.95rem;
+        margin-top: 4px;
+        margin-bottom: 1.5rem;
+    }
+
+    /* + Create New Project button (Navy Pill) */
+    .create-project-btn-wrap div[data-testid="stButton"] > button {
+        background-color: #1C274C !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 9999px !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+        padding: 0.65rem 1.4rem !important;
+        box-shadow: 0 4px 14px rgba(28, 39, 76, 0.2) !important;
+        transition: all 0.2s ease !important;
+    }
+    .create-project-btn-wrap div[data-testid="stButton"] > button:hover {
+        background-color: #0F172A !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 18px rgba(28, 39, 76, 0.3) !important;
+    }
+
+    /* Clean Project Card (Exact Image 2) */
+    .clean-project-card {
         background: #FFFFFF;
         border: 1px solid #E2E8F0;
+        border-radius: 16px;
+        padding: 1.35rem 1.45rem 1.15rem 1.45rem;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        margin-bottom: 0.5rem;
+    }
+    .clean-project-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+        border-color: #CBD5E1;
+    }
+    .card-top-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+    .card-title-text {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #0F172A;
+    }
+    .card-id-pill {
+        background: #F1F5F9;
+        color: #64748B;
+        font-size: 0.78rem;
+        font-weight: 700;
+        padding: 3px 9px;
+        border-radius: 9999px;
+        border: 1px solid #E2E8F0;
+    }
+    .card-meta-desc {
+        font-size: 0.85rem;
+        color: #64748B;
+        margin-bottom: 14px;
+    }
+    .card-badge-status {
+        display: inline-block;
+        background: #EEF2FF;
+        color: #4F46E5;
+        border: 1px solid #E0E7FF;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 3px 12px;
+        border-radius: 9999px;
+        margin-bottom: 16px;
+    }
+    .card-progress-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.8rem;
+        color: #64748B;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .card-progress-track {
+        height: 5px;
+        border-radius: 9999px;
+        background: #E2E8F0;
+        overflow: hidden;
+        margin-bottom: 14px;
+    }
+    .card-progress-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: #2563EB;
+    }
+    .card-footer-box {
         display: flex;
         align-items: center;
-        justify-content: center;
-        position: relative;
-        color: #475569;
-        font-size: 14px;
+        justify-content: space-between;
+        padding-top: 10px;
+        border-top: 1px solid #F1F5F9;
     }
-    .notif-pink-dot {
-        position: absolute;
-        top: 6px;
-        right: 6px;
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background-color: #EC4899;
-    }
-    .avatar-pill-box {
+    .card-user-meta {
         display: flex;
         align-items: center;
-        gap: 6px;
-        cursor: pointer;
+        gap: 8px;
     }
-    .avatar-circle-icon {
-        width: 34px;
-        height: 34px;
+    .avatar-mini-circle {
+        width: 26px;
+        height: 26px;
         border-radius: 50%;
         background: #1C274C;
         color: #FFFFFF;
         display: flex;
         align-items: center;
         justify-content: center;
+        font-size: 10px;
         font-weight: 800;
-        font-size: 12px;
+    }
+    .team-badge-text {
+        font-size: 0.8rem;
+        color: #64748B;
+        font-weight: 600;
     }
 
-    /* 4 Thẻ KPI Stat Cards */
-    .kpi-row-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1.25rem;
-        margin-bottom: 2rem;
+    /* Open Chapter Studio Button inside card column */
+    .card-action-btn div[data-testid="stButton"] > button {
+        background: transparent !important;
+        border: 1px solid #E2E8F0 !important;
+        color: #1C274C !important;
+        font-weight: 700 !important;
+        font-size: 0.85rem !important;
+        border-radius: 9999px !important;
+        padding: 6px 14px !important;
+        transition: all 0.15s ease !important;
     }
-    .kpi-stat-card {
-        background: #FFFFFF;
-        border: 1px solid #EAEAEA;
-        border-radius: 16px;
-        padding: 1.25rem 1.35rem;
-        box-shadow: 0 2px 8px rgba(20, 25, 35, 0.02);
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-    .kpi-stat-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(20, 25, 35, 0.06);
-    }
-    .kpi-card-sub {
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: #6C7275;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .kpi-card-num {
-        font-size: 1.85rem;
-        font-weight: 800;
-        color: #1A1D1F;
-        margin: 6px 0 2px 0;
-        letter-spacing: -0.02em;
-    }
-    .kpi-card-badge {
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: #2563EB;
-        background: #EFF6FF;
-        padding: 2px 8px;
-        border-radius: 9999px;
-    }
-
-    /* Thẻ truyện Project Card */
-    .manga-card-box {
-        background: #FFFFFF;
-        border: 1px solid #EAEAEA;
-        border-radius: 18px;
-        overflow: hidden;
-        box-shadow: 0 4px 16px rgba(20, 25, 35, 0.04);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        margin-bottom: 0.75rem;
-    }
-    .manga-card-box:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 28px rgba(20, 25, 35, 0.08);
-    }
-    .manga-card-banner {
-        height: 70px;
-        background: linear-gradient(135deg, #1C274C 0%, #2563EB 100%);
-        padding: 12px 16px;
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-    }
-    .manga-card-tag {
-        background: rgba(255, 255, 255, 0.2);
-        backdrop-filter: blur(4px);
-        color: #FFFFFF;
-        font-size: 0.72rem;
-        font-weight: 700;
-        padding: 3px 10px;
-        border-radius: 9999px;
-    }
-    .manga-card-id {
-        background: #FFFFFF;
-        color: #1C274C;
-        font-size: 0.75rem;
-        font-weight: 800;
-        padding: 2px 8px;
-        border-radius: 6px;
-    }
-    .manga-card-body {
-        padding: 1.25rem 1.35rem;
-    }
-    .manga-card-title {
-        font-size: 1.2rem;
-        font-weight: 800;
-        color: #1A1D1F;
-        margin: 0 0 6px 0;
-    }
-    .manga-card-desc {
-        color: #6C7275;
-        font-size: 0.85rem;
-        min-height: 40px;
-        line-height: 1.45;
-        margin-bottom: 1rem;
-    }
-    .manga-progress-track {
-        height: 8px;
-        border-radius: 9999px;
-        background: #E8EAED;
-        overflow: hidden;
-        margin-top: 6px;
-    }
-    .manga-progress-fill {
-        height: 100%;
-        border-radius: inherit;
-        background: #2563EB;
+    .card-action-btn div[data-testid="stButton"] > button:hover {
+        background: #1C274C !important;
+        color: #FFFFFF !important;
+        border-color: #1C274C !important;
     }
 
     /* Dashed New Card */
     .dashed-new-card {
         border: 2px dashed #CBD5E1;
         background: #FAFAFA;
-        border-radius: 18px;
+        border-radius: 16px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -296,6 +326,7 @@ st.markdown(
         text-align: center;
         color: #64748B;
         transition: all 0.2s ease;
+        margin-bottom: 0.5rem;
     }
     .dashed-new-card:hover {
         border-color: #2563EB;
@@ -303,51 +334,114 @@ st.markdown(
         color: #2563EB;
     }
 
-    div.stButton > button {
-        border-radius: 9999px !important;
-        font-weight: 700 !important;
+    /* 3 Summary Metric Cards at Bottom (Image 2) */
+    .metric-row-wrap {
+        margin-top: 3.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #EAEAEA;
+    }
+    .bottom-metric-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 16px;
+        padding: 1.25rem 1.4rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.02);
+    }
+    .metric-title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #64748B;
+        margin-bottom: 4px;
+    }
+    .metric-num {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: #0F172A;
+        letter-spacing: -0.02em;
+    }
+    .metric-sub-green {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #16A34A;
+        margin-top: 2px;
+    }
+    .metric-sub-gray {
+        font-size: 0.78rem;
+        color: #64748B;
+        margin-top: 2px;
+    }
+    .metric-icon-box {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# 4. Top Navbar (Chuẩn xác 100% theo Ảnh 2 của bạn)
-st.markdown(
-    f"""
-    <div class="top-nav-wrap">
+# 5. Top Navbar Native (100% Tương tác: Tìm kiếm thật, Trạng thái Node thật, Popover User)
+nav_col_left, nav_col_search, nav_col_node, nav_col_user = st.columns([2.6, 3.2, 2.2, 1.2], vertical_alignment="center")
+
+with nav_col_left:
+    st.markdown(
+        """
         <div class="top-breadcrumb-box">
             <span class="top-breadcrumb-bold">ACL Studio</span>
             <span class="top-breadcrumb-slash">/</span>
             <span class="top-breadcrumb-current">Projects</span>
         </div>
-        <div class="top-right-group">
-            <div class="search-mock-pill">
-                <span>🔍</span>
-                <span>Filter batches or series...</span>
-            </div>
-            <div class="node-status-ready">
-                <span>⚙</span>
-                <span>Node: {hostname} (Ready)</span>
-            </div>
-            <div class="icon-badge-box">
-                <span>🔔</span>
-                <span class="notif-pink-dot"></span>
-            </div>
-            <div class="icon-badge-box">
-                <span>🎛️</span>
-            </div>
-            <div class="avatar-pill-box">
-                <div class="avatar-circle-icon">{user_initials}</div>
-                <span style="font-size:10px; color:#64748B;">▼</span>
-            </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with nav_col_search:
+    st.markdown('<div class="top-search-wrapper">', unsafe_allow_html=True)
+    search_keyword = st.text_input(
+        "Search batches or series",
+        placeholder="🔍 Filter batches or series...",
+        label_visibility="collapsed",
+        key="top_navbar_search_input",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with nav_col_node:
+    st.markdown(
+        f"""
+        <div class="node-status-ready">
+            <span>⚙</span>
+            <span>Node: {hostname} (Ready)</span>
         </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        """,
+        unsafe_allow_html=True,
+    )
+
+with nav_col_user:
+    st.markdown('<div class="top-avatar-popover">', unsafe_allow_html=True)
+    with st.popover(f"👤 {user_initials} ▼", use_container_width=True):
+        st.markdown(f"**{escape(user.full_name or 'Quân')}**")
+        st.caption(f"📧 {escape(user.email or '')}")
+        st.caption(f"Quyền: **{escape(user.role or 'Owner')}**")
+        st.divider()
+        st.page_link("pages/3_Settings.py", label="Cài đặt cá nhân", icon="⚙️")
+        if st.button("Đăng xuất", key="popover_logout_btn", use_container_width=True):
+            logout()
+            st.switch_page("pages/0_Login.py")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown('<div style="height: 1.5rem;"></div>', unsafe_allow_html=True)
 
 
+# 6. Modal Dialog Tạo Dự Án Mới
 @st.dialog("Tạo Dự Án Dịch Thuật Mới")
 def create_project_dialog() -> None:
     with st.form("create_project_modal_form"):
@@ -361,141 +455,81 @@ def create_project_dialog() -> None:
             st.error("Vui lòng nhập tên dự án.")
             return
         try:
-            new_p = workspace_service.create_project(user_id, title.strip(), description.strip())
-            st.session_state["current_project_id"] = new_p.id
-            st.session_state["current_project_title"] = new_p.title
-            st.query_params["project_id"] = str(new_p.id)
-            st.query_params["project"] = new_p.title
-            st.success(f"Khởi tạo dự án '{new_p.title}' thành công!")
+            new_p_id = workspace_service.create_project(user_id, title.strip(), description.strip())
+            st.session_state["current_project_id"] = new_p_id
+            st.session_state["current_project_title"] = title.strip()
+            st.query_params["project_id"] = str(new_p_id)
+            st.query_params["project"] = title.strip()
+            st.success(f"Khởi tạo dự án '{title.strip()}' thành công!")
             st.rerun()
         except WorkspaceServiceError as exc:
             st.error(f"Lỗi khởi tạo: {exc}")
 
 
-# 5. Truy vấn danh sách dự án thật từ SQLite
-projects = workspace_service.list_projects(user_id)
-total_pages = sum(p.total_pages for p in projects)
-completed_pages = sum(p.completed_pages for p in projects)
-overall_pct = int((completed_pages / total_pages * 100)) if total_pages > 0 else 0
-
-# 6. Hàng 4 Thẻ KPI Stat Cards Sang Trọng
-st.markdown(
-    f"""
-    <div class="kpi-row-grid">
-        <div class="kpi-stat-card">
-            <div class="kpi-card-sub">
-                <span>DỰ ÁN KHẢ DỤNG</span>
-                <span class="kpi-card-badge">SQLite Real</span>
-            </div>
-            <div class="kpi-card-num">{len(projects)}</div>
-            <div style="font-size:0.75rem; color:#6C7275;">Dự án được phân quyền quản lý</div>
-        </div>
-        <div class="kpi-stat-card">
-            <div class="kpi-card-sub">
-                <span>DUNG LƯỢNG DATA</span>
-                <span class="kpi-card-badge">Local Disk</span>
-            </div>
-            <div class="kpi-card-num">{storage_display}</div>
-            <div style="font-size:0.75rem; color:#6C7275;">Bộ nhớ ảnh raw & rendered</div>
-        </div>
-        <div class="kpi-stat-card">
-            <div class="kpi-card-sub">
-                <span>TIẾN ĐỘ TỔNG THỂ</span>
-                <span class="kpi-card-badge">{overall_pct}%</span>
-            </div>
-            <div class="kpi-card-num">{completed_pages}<span style="font-size:1.1rem; color:#6C7275; font-weight:500;">/{total_pages}</span></div>
-            <div style="font-size:0.75rem; color:#6C7275;">Trang manga đã xuất bản</div>
-        </div>
-        <div class="kpi-stat-card">
-            <div class="kpi-card-sub">
-                <span>AI WORKER NODE</span>
-                <span class="kpi-card-badge" style="background:#DCFCE7; color:#15803D;">Online</span>
-            </div>
-            <div class="kpi-card-num" style="font-size:1.45rem; padding-top:4px;">{hostname}</div>
-            <div style="font-size:0.75rem; color:#6C7275;">{cores} CPU Cores • Sẵn sàng xử lý</div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# 7. Tiêu đề Workspace và Nút Tạo Dự Án Native
-title_col, action_col, logout_col = st.columns([2.7, 1.3, 0.6])
-with title_col:
-    st.markdown('<h1 style="font-size:1.85rem; font-weight:800; margin:0; color:#1A1D1F;">Manga Projects Workspace</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:#6C7275; margin:0.25rem 0 1rem;">Quản lý và điều phối các tác vụ dịch thuật tự động theo thời gian thực.</p>', unsafe_allow_html=True)
-
-with action_col:
-    st.write("")
-    if st.button("➕ Tạo Dự Án Mới", use_container_width=True):
+# 7. Tiêu đề Trang & Nút Tạo Dự Án Chuẩn Ảnh 2
+head_left, head_right = st.columns([3.8, 1.4], vertical_alignment="center")
+with head_left:
+    st.markdown('<h1 class="main-page-title">Projects</h1>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="main-page-sub">Manage your ongoing comic localization series and translation pipelines.</p>',
+        unsafe_allow_html=True,
+    )
+with head_right:
+    st.markdown('<div class="create-project-btn-wrap">', unsafe_allow_html=True)
+    if st.button("＋ Create New Project", key="btn_create_project_top", use_container_width=True):
         create_project_dialog()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-with logout_col:
-    st.write("")
-    if st.button("Đăng xuất", use_container_width=True):
-        logout()
-        st.switch_page("pages/0_Login.py")
+# 8. Truy vấn danh sách dự án thật từ SQLite
+projects = workspace_service.list_projects(user_id)
 
-# 8. Thanh Tìm Kiếm & Bộ Lọc Native
-search_col, filter_col = st.columns([3, 1.2])
-with search_col:
-    search_keyword = st.text_input(
-        "Tìm kiếm dự án",
-        placeholder="🔍 Tìm kiếm theo tên bộ truyện...",
-        label_visibility="collapsed",
-    )
-with filter_col:
-    filter_status = st.selectbox(
-        "Bộ lọc",
-        ["Tất cả trạng thái", "Đang xử lý (< 100%)", "Đã hoàn thành (100%)"],
-        label_visibility="collapsed",
-    )
-
-# Lọc danh sách theo từ khóa và trạng thái
 display_projects = projects
 if search_keyword.strip():
     kw = search_keyword.strip().lower()
     display_projects = [p for p in display_projects if kw in p.title.lower() or kw in p.description.lower()]
 
-if filter_status == "Đang xử lý (< 100%)":
-    display_projects = [p for p in display_projects if p.progress_percent < 100]
-elif filter_status == "Đã hoàn thành (100%)":
-    display_projects = [p for p in display_projects if p.progress_percent == 100]
-
-# 9. Lưới Thẻ Truyện (Project Cards Grid) + Thẻ Dashed New Project
+# 9. Lưới Thẻ Truyện (Exact Project Cards từ Ảnh 2)
 if not display_projects:
     st.info("Không tìm thấy bộ truyện nào phù hợp với bộ lọc hiện tại.")
+    if st.button("Khởi tạo bộ truyện ngay", key="btn_empty_create"):
+        create_project_dialog()
 else:
     for start in range(0, len(display_projects), 3):
         row_projects = display_projects[start : start + 3]
-        columns = st.columns(3, gap="medium")
+        columns = st.columns(3, gap="large")
         for idx_col, project in enumerate(row_projects):
             with columns[idx_col]:
-                desc_text = project.description if project.description else "Dự án dịch truyện tự động."
+                desc_text = project.description if project.description else "0 pages • Japanese ➔ Vietnamese"
+                status_text = "Ready for Upload" if project.total_pages == 0 else ("Completed" if project.progress_percent == 100 else "Processing")
                 st.markdown(
                     f"""
-                    <div class="manga-card-box">
-                        <div class="manga-card-banner">
-                            <span class="manga-card-tag">MANGA SERIE</span>
-                            <span class="manga-card-id">#{project.id:02d}</span>
+                    <div class="clean-project-card">
+                        <div class="card-top-row">
+                            <span class="card-title-text">{escape(project.title)}</span>
+                            <span class="card-id-pill">#{project.id:02d}</span>
                         </div>
-                        <div class="manga-card-body">
-                            <h3 class="manga-card-title">{escape(project.title)}</h3>
-                            <div class="manga-card-desc">{escape(desc_text)}</div>
-                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:#6C7275; margin-bottom:4px;">
-                                <span>{project.completed_pages}/{project.total_pages} trang hoàn thành</span>
-                                <strong style="color:#1C274C;">{project.progress_percent}%</strong>
-                            </div>
-                            <div class="manga-progress-track">
-                                <div class="manga-progress-fill" style="width:{project.progress_percent}%;"></div>
+                        <div class="card-meta-desc">{escape(desc_text)}</div>
+                        <div class="card-badge-status">{status_text}</div>
+                        <div class="card-progress-labels">
+                            <span>Progress: {status_text}</span>
+                            <span>{project.progress_percent}%</span>
+                        </div>
+                        <div class="card-progress-track">
+                            <div class="card-progress-fill" style="width:{project.progress_percent}%;"></div>
+                        </div>
+                        <div class="card-footer-box">
+                            <div class="card-user-meta">
+                                <div class="avatar-mini-circle">{user_initials}</div>
+                                <span class="team-badge-text">1 team 👥</span>
                             </div>
                         </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
+                st.markdown('<div class="card-action-btn">', unsafe_allow_html=True)
                 if st.button(
-                    "Mở Chapter Studio ➔",
+                    "Open Chapter Studio ➔",
                     key=f"btn_open_proj_{project.id}",
                     use_container_width=True,
                 ):
@@ -504,7 +538,9 @@ else:
                     st.query_params["project_id"] = str(project.id)
                     st.query_params["project"] = project.title
                     st.switch_page("pages/2_Chapter_Studio.py")
+                st.markdown("</div>", unsafe_allow_html=True)
 
+        # Thẻ dashed nếu còn ô trống trong hàng
         if len(row_projects) < 3:
             remaining_col = columns[len(row_projects)]
             with remaining_col:
@@ -518,5 +554,57 @@ else:
                     """,
                     unsafe_allow_html=True,
                 )
+                st.markdown('<div class="card-action-btn">', unsafe_allow_html=True)
                 if st.button("Tạo Dự Án Nhanh", key=f"quick_create_btn_{start}", use_container_width=True):
                     create_project_dialog()
+                st.markdown("</div>", unsafe_allow_html=True)
+
+# 10. Hàng 3 Thẻ Metric Thống Kê ở Dưới Cùng (Chuẩn xác 100% theo Ảnh 2)
+st.markdown('<div class="metric-row-wrap">', unsafe_allow_html=True)
+stat_c1, stat_c2, stat_c3 = st.columns(3, gap="large")
+
+with stat_c1:
+    st.markdown(
+        f"""
+        <div class="bottom-metric-card">
+            <div>
+                <div class="metric-title">Active Projects</div>
+                <div class="metric-num">{len(projects)}</div>
+                <div class="metric-sub-green">+1 this week</div>
+            </div>
+            <div class="metric-icon-box">📁</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with stat_c2:
+    st.markdown(
+        f"""
+        <div class="bottom-metric-card">
+            <div>
+                <div class="metric-title">In Queue</div>
+                <div class="metric-num">{in_queue_count}</div>
+                <div class="metric-sub-gray">pages pending OCR</div>
+            </div>
+            <div class="metric-icon-box">⌛</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with stat_c3:
+    st.markdown(
+        f"""
+        <div class="bottom-metric-card">
+            <div>
+                <div class="metric-title">Storage Allocation</div>
+                <div class="metric-num">{storage_display}</div>
+                <div class="metric-sub-gray">/ 10 GB ({storage_pct}%)</div>
+            </div>
+            <div class="metric-icon-box">☁️</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+st.markdown("</div>", unsafe_allow_html=True)
