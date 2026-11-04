@@ -21,17 +21,16 @@ from backend.models import TextRegion
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-def _gemini_client():
-    """Read the latest key so Settings changes apply without restarting Streamlit."""
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    return (
-        genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(timeout=30000),
-        )
-        if (genai and types and api_key)
-        else None
+# Khởi tạo Client theo chuẩn Google GenAI SDK mới
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+client = (
+    genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(timeout=30000),
     )
+    if (genai and types and GEMINI_API_KEY)
+    else None
+)
 
 
 def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
@@ -63,7 +62,6 @@ def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
         if model
     ]
 
-    client = _gemini_client()
     if client:
         for model_name in candidate_models:
             for attempt in range(2):
