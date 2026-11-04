@@ -1,10 +1,10 @@
-"""Native Streamlit navigation controls for sidebar matching Stitch UX/UI design (100% Native)."""
+"""Native Streamlit navigation controls for sidebar matching Login brand & Stitch UX/UI design (100% Native)."""
 
 import streamlit as st
 
 
 def render_page_navigation() -> None:
-    """Render sleek left sidebar navigation matching Stitch design using native Streamlit."""
+    """Render sleek left sidebar navigation matching Login brand navy theme using native Streamlit."""
     st.markdown(
         """
         <style>
@@ -13,83 +13,116 @@ def render_page_navigation() -> None:
             display: none !important;
         }
         
-        /* Custom Sidebar Background and Width */
+        /* Custom Sidebar: Deep Navy Background synced with Login Brand Panel (#25326f) */
         [data-testid="stSidebar"] {
             display: block !important;
             visibility: visible !important;
             transform: none !important;
-            background-color: #FFFFFF !important;
-            border-right: 1px solid #EAEAEA !important;
+            background-color: #25326F !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.12) !important;
             width: 250px !important;
             min-width: 250px !important;
         }
-        [data-testid="stSidebarCollapsedControl"] {
-            display: none !important;
-        }
         [data-testid="stSidebar"] > div:first-child {
-            padding-top: 1.25rem !important;
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
+            padding-top: 1.5rem !important;
+            padding-left: 1.1rem !important;
+            padding-right: 1.1rem !important;
+            background-color: #25326F !important;
+        }
+        [data-testid="stSidebarCollapseButton"] button,
+        [data-testid="stSidebarCollapseButton"] svg {
+            color: rgba(255, 255, 255, 0.7) !important;
+            fill: rgba(255, 255, 255, 0.7) !important;
+        }
+        [data-testid="stSidebarCollapseButton"] button:hover {
+            color: #FFFFFF !important;
+            background: rgba(255, 255, 255, 0.15) !important;
         }
         
+        /* Brand Header in Sidebar matching Login Screen */
         .sidebar-brand-box {
-            padding: 0.5rem 0.5rem 1.75rem 0.5rem;
+            padding: 0.5rem 0.5rem 2rem 0.5rem;
         }
         .sidebar-brand-logo {
             display: flex;
             align-items: baseline;
-            gap: 3px;
+            gap: 4px;
         }
         .sidebar-brand-title {
-            font-size: 26px;
+            font-size: 28px;
             font-weight: 900;
-            color: #1C274C;
+            color: #FFFFFF;
             letter-spacing: -0.03em;
         }
         .sidebar-brand-dot {
             display: inline-block;
-            width: 7px;
-            height: 7px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background-color: #2563EB;
+            background-color: #38BDF8;
             margin-bottom: 2px;
+            box-shadow: 0 0 10px #38BDF8;
         }
         .sidebar-brand-sub {
             font-size: 11px;
-            font-weight: 600;
-            color: #6C7275;
-            margin-top: 3px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.75);
+            margin-top: 4px;
+            letter-spacing: 0.02em;
         }
         
-        /* Style native page links in sidebar to match Stitch pills */
+        /* Style native page links in sidebar */
         [data-testid="stSidebar"] div.stPageLink {
-            margin-bottom: 6px;
+            margin-bottom: 8px;
         }
         [data-testid="stSidebar"] div.stPageLink a {
             border-radius: 9999px !important;
             padding: 10px 18px !important;
             font-weight: 600 !important;
             font-size: 14px !important;
-            color: #475569 !important;
-            transition: all 0.15s ease !important;
+            color: rgba(255, 255, 255, 0.82) !important;
+            background-color: transparent !important;
+            transition: all 0.18s ease !important;
             text-decoration: none !important;
             display: flex !important;
             align-items: center !important;
             gap: 12px !important;
         }
+        [data-testid="stSidebar"] div.stPageLink a p,
+        [data-testid="stSidebar"] div.stPageLink a span {
+            color: rgba(255, 255, 255, 0.82) !important;
+        }
         [data-testid="stSidebar"] div.stPageLink a:hover {
-            background-color: #F1F5F9 !important;
-            color: #1C274C !important;
-        }
-        [data-testid="stSidebar"] div.stPageLink a[aria-current="page"] {
-            background-color: #1C274C !important;
+            background-color: rgba(255, 255, 255, 0.14) !important;
             color: #FFFFFF !important;
-            font-weight: 700 !important;
-            box-shadow: 0 4px 14px rgba(28, 39, 76, 0.18) !important;
         }
-        [data-testid="stSidebar"] div.stPageLink a[aria-current="page"] p,
-        [data-testid="stSidebar"] div.stPageLink a[aria-current="page"] span {
+        [data-testid="stSidebar"] div.stPageLink a:hover p,
+        [data-testid="stSidebar"] div.stPageLink a:hover span {
             color: #FFFFFF !important;
+        }
+
+        /* Active highlight for each page: Solid White Pill with Navy Text */
+        [data-testid="stSidebar"] a[href*="Workspace"]:not([href*="Team"]),
+        [data-testid="stSidebar"] a[href*="Team_Workspace"],
+        [data-testid="stSidebar"] a[href*="Chapter_Studio"],
+        [data-testid="stSidebar"] a[href*="Review_Studio"],
+        [data-testid="stSidebar"] a[href*="Typesetting"],
+        [data-testid="stSidebar"] a[href*="Queue_Monitor"],
+        [data-testid="stSidebar"] a[href*="Settings"] {
+            /* Fallback link styles */
+        }
+
+        /* Specific active style injected per page, e.g., Projects on Workspace */
+        .active-nav-pill a {
+            background-color: #FFFFFF !important;
+            color: #25326F !important;
+            font-weight: 800 !important;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+        }
+        .active-nav-pill a p,
+        .active-nav-pill a span {
+            color: #25326F !important;
+            font-weight: 800 !important;
         }
         </style>
         """,
