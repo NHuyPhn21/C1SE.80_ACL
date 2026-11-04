@@ -136,3 +136,29 @@ class TeamService:
             raise
         finally:
             db.close()
+
+    def remove_member(self, project_id: int, user_id: int) -> None:
+        db = self.session_factory()
+        try:
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if project is None:
+                raise TeamServiceError("Project not found.")
+            if project.owner_id == user_id:
+                raise TeamServiceError("The project owner cannot be removed.")
+            membership = (
+                db.query(ProjectMembership)
+                .filter(
+                    ProjectMembership.project_id == project_id,
+                    ProjectMembership.user_id == user_id,
+                )
+                .first()
+            )
+            if membership is None:
+                raise TeamServiceError("Project membership not found.")
+            db.delete(membership)
+            db.commit()
+        except TeamServiceError:
+            db.rollback()
+            raise
+        finally:
+            db.close()

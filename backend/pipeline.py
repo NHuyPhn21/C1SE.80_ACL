@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from backend.database import SessionLocal
-from backend.models import Chapter, ComicPage, TextRegion
+from backend.models import Chapter, ComicPage, TextRegion, Project, User
 from backend.image_utils import (
     process_comic_page,
     BASE_DIR,
@@ -18,13 +18,40 @@ from ai_core.translator import translate_manga_text
 
 def ensure_default_chapter(db) -> int:
     """Đảm bảo luôn có ít nhất 1 Chapter trong SQLite để không bao giờ lỗi khóa ngoại chapter_id."""
-    try:
-        chapter = db.query(Chapter).first()
-        if chapter:
-            return chapter.id
-    except Exception:
-        pass
-    return 1
+    chapter = db.query(Chapter).first()
+    if chapter:
+        return chapter.id
+
+    user = db.query(User).first()
+    if not user:
+        user = User(
+            username="admin",
+            email="admin@acl.local",
+            password_hash="local-pipeline",
+            role="editor",
+        )
+        db.add(user)
+        db.flush()
+
+    project = db.query(Project).filter(Project.owner_id == user.id).first()
+    if not project:
+        project = Project(
+            owner_id=user.id,
+            title="Local Uploads",
+            description="Uploaded manga pages",
+        )
+        db.add(project)
+        db.flush()
+
+    chapter = Chapter(
+        project_id=project.id,
+        chapter_number=1,
+        chapter_name="Uploaded Chapter",
+    )
+    db.add(chapter)
+    db.commit()
+    db.refresh(chapter)
+    return chapter.id
 
 
 def run_full_acl_pipeline(
@@ -32,7 +59,8 @@ def run_full_acl_pipeline(
     chapter_id: int = None,
     page_number: int = 1,
     force_reprocess: bool = False,
-    use_lama_api: bool = False
+    use_lama_api: bool = False,
+    progress_callback=None,
 ) -> dict:
     """
     Main AI Processing Pipeline (End-to-End 5 bước):
@@ -46,6 +74,10 @@ def run_full_acl_pipeline(
     db = SessionLocal()
 
     try:
+        def report(progress: int, step: str) -> None:
+            if progress_callback:
+                progress_callback(progress, step)
+
         src_path = Path(resolve_project_path(input_image_path)).resolve()
         if not src_path.exists():
             raise FileNotFoundError(f"Không tìm thấy ảnh đầu vào: {input_image_path}")
@@ -86,6 +118,7 @@ def run_full_acl_pipeline(
         existing_regions = db.query(TextRegion).filter(TextRegion.page_id == page.id).all()
 
         # 3. BƯỚC 1 & 2: Chạy YOLOv8 + MangaOCR nếu trang chưa có dữ liệu vùng chữ
+        report(10, "YOLOv8 Detection")
         if not existing_regions:
             print(f"\n🚀 [Bước 1 & 2/5] Chạy YOLOv8 & MangaOCR cho trang: {working_img_path.name} (Page ID: {page.id})")
             extracted_items = extract_manga_text(
@@ -106,16 +139,31 @@ def run_full_acl_pipeline(
             print(f"ℹ️ Trang {working_img_path.name} (Page ID: {page.id}) đã có sẵn {len(existing_regions)} bóng thoại trong DB.")
 
         # 4. BƯỚC 3: Dịch thuật gộp (Batch JSON Translation) cho các câu chưa dịch trên trang này
+        report(35, "MangaOCR")
         print(f"🌐 [Bước 3/5] Kiểm tra và dịch lời thoại tiếng Việt cho Page ID: {page.id}...")
+        report(60, "Gemini Translation")
         translate_manga_text(page_id=page.id)
+        untranslated = db.query(TextRegion).filter(
+            TextRegion.page_id == page.id,
+            TextRegion.original_text.isnot(None),
+            TextRegion.original_text != "",
+            (TextRegion.translated_text.is_(None) | (TextRegion.translated_text == "")),
+        ).count()
+        if untranslated:
+            raise RuntimeError(
+                f"Không dịch được {untranslated} vùng chữ của trang {working_img_path.name}. "
+                "Hãy kiểm tra GEMINI_API_KEY hoặc kết nối dịch dự phòng."
+            )
 
         # 5. BƯỚC 4 & 5: Tạo Mask bảo vệ viền + Fast Inpainting + Dàn trang tiếng Việt
         print(f"🎨 [Bước 4 & 5/5] Tẩy chữ và dàn trang cho Page ID: {page.id}...")
+        report(80, "Inpainting")
         final_output_path = process_comic_page(
             page_id=page.id,
             font_path=DEFAULT_FONT_PATH,
             use_lama_api=use_lama_api
         )
+        report(95, "Typesetting")
 
         # Cập nhật trạng thái và đường dẫn vào bảng ComicPage
         if final_output_path:
@@ -135,6 +183,9 @@ def run_full_acl_pipeline(
         }
 
     except Exception as e:
+        if "page" in locals() and page is not None:
+            page.status = "FAILED"
+            db.commit()
         print(f"❌ Lỗi Pipeline tại {input_image_path}: {e}")
         return {
             "status": "error",

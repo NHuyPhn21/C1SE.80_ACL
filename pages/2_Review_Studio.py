@@ -128,9 +128,14 @@ all_pages = []
 current_page = None
 page_idx = 1
 total_pages = 1
+reviewed_pages = 0
 
 try:
     all_pages = db.query(ComicPage).order_by(ComicPage.id.asc()).all()
+    reviewed_pages = sum(
+        1 for page in all_pages
+        if page.status == "COMPLETED" or bool(page.rendered_path)
+    )
     req_page_id = st.query_params.get("page_id")
     req_page_name = st.query_params.get("page_name")
 
@@ -181,7 +186,7 @@ st.markdown(
     f"""
     <div class="top-breadcrumb">
         <div>ACL Studio &nbsp;/&nbsp; Manga Batch #104 &nbsp;/&nbsp; Raw Ingestion &nbsp;/&nbsp; <strong style="color:#1C274C;">OCR Masking</strong></div>
-        <div class="node-status"><span class="node-dot"></span> 18/24 Pages Reviewed</div>
+        <div class="node-status"><span class="node-dot"></span> {reviewed_pages}/{total_pages} Pages Reviewed</div>
     </div>
     """,
     unsafe_allow_html=True,

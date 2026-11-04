@@ -52,8 +52,15 @@ class WorkspaceService:
                 description=description.strip() or None,
             )
             db.add(project)
+            db.flush()
+            db.add(
+                ProjectMembership(
+                    project_id=project.id,
+                    user_id=owner_id,
+                    project_role="Owner",
+                )
+            )
             db.commit()
-            db.refresh(project)
             return project.id
         except WorkspaceServiceError:
             db.rollback()

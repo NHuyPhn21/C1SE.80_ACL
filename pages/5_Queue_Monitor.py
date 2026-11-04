@@ -202,12 +202,26 @@ if pending_files:
         status_msg.info(f"⏳ Đang thực thi AI cho `{target.name}` (YOLOv8 + OCR + Gemini + Inpaint)...")
         prog_slot.progress(int((idx - 1) / total * 100))
 
+        def update_progress(step_progress: int, step_name: str) -> None:
+            overall = int(((idx - 1) * 100 + step_progress) / total)
+            st.session_state["acl_job"].update(
+                status="processing",
+                current_file=target.name,
+                progress_pct=overall,
+                step_name=step_name,
+            )
+            prog_slot.progress(
+                overall,
+                text=f"{target.name} - {step_name} ({idx}/{total})",
+            )
+
         try:
             res = run_full_acl_pipeline(
                 input_image_path=str(target),
                 page_number=idx,
                 force_reprocess=True,
                 use_lama_api=False,
+                progress_callback=update_progress,
             )
             if res.get("status") == "error":
                 st.session_state["acl_job"]["status"] = "error"
@@ -220,7 +234,7 @@ if pending_files:
             st.error(f"Ngoại lệ: {e}")
             break
     else:
-        st.session_state["acl_job"]["status"] = "success"
+        st.session_state["acl_job"]["status"] = "completed"
         st.session_state["acl_job"]["progress_pct"] = 100
         prog_slot.progress(100)
         status_msg.success("✅ Toàn bộ trang truyện đã được dịch và xuất bản thành công!")

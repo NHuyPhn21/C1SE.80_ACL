@@ -86,12 +86,21 @@ with st.container(border=True):
     st.markdown("### Workspace Members")
     for member in members:
         owner_suffix = " (Owner)" if member.is_owner else ""
-        st.markdown(
-            f"""
-            <div class="member-row">
-              <div><strong>{escape(member.name)}</strong><br><span style="color:#6C7275;font-size:.82rem">{escape(member.email)}</span></div>
-              <span class="role-pill">{escape(member.role)}{owner_suffix}</span>
-            </div>
-            """,
+        info_col, role_col, action_col = st.columns([2.2, 1.2, 0.8])
+        info_col.markdown(
+            f"**{escape(member.name)}**  \n<span style='color:#6C7275;font-size:.82rem'>{escape(member.email)}</span>",
             unsafe_allow_html=True,
         )
+        role_col.markdown(
+            f'<span class="role-pill">{escape(member.role)}{owner_suffix}</span>',
+            unsafe_allow_html=True,
+        )
+        if not member.is_owner and action_col.button(
+            "Remove", key=f"remove_member_{member.user_id}", use_container_width=True
+        ):
+            try:
+                team_service.remove_member(project.id, member.user_id)
+                st.success(f"Removed {member.name} from the project.")
+                st.rerun()
+            except TeamServiceError as exc:
+                st.error(str(exc))

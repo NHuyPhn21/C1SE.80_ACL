@@ -1,18 +1,37 @@
 import os
 import json
 import time
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
+from pathlib import Path
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
+
 from backend.database import SessionLocal
 from backend.models import TextRegion
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 def _gemini_client():
     """Read the latest key so Settings changes apply without restarting Streamlit."""
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    return genai.Client(api_key=api_key) if api_key else None
+    return (
+        genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=30000),
+        )
+        if (genai and types and api_key)
+        else None
+    )
 
 
 def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
@@ -32,12 +51,21 @@ def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
         f"Dữ liệu tiếng Nhật:\n{json.dumps(ja_dict, ensure_ascii=False, indent=2)}"
     )
 
-    candidate_models = ["gemini-3.8-flash"]
+    configured_model = os.getenv("GEMINI_MODEL", "").strip()
+    candidate_models = [
+        model for model in (
+            configured_model,
+            "gemini-3.6-flash",
+            "gemini-flash-latest",
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+        )
+        if model
+    ]
 
     client = _gemini_client()
     if client:
         for model_name in candidate_models:
-            # Chỉ thử tối đa 2 lần, nghỉ ngắn 2 giây để không làm chậm Pipeline
             for attempt in range(2):
                 try:
                     response = client.models.generate_content(
@@ -52,13 +80,18 @@ def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
 
                 except Exception as api_error:
                     err_msg = str(api_error)
-                    print(f"⚠️ Cảnh báo [{model_name} - Lần {attempt + 1}/2]: {err_msg}")
-                    if any(code in err_msg for code in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]):
-                        if attempt == 0:
-                            print("⏳ Đợi 2 giây rồi thử lại lần cuối...")
-                            time.sleep(2)
-                    else:
+                    retryable = any(
+                        code in err_msg
+                        for code in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]
+                    )
+                    print(
+                        f"⚠️ Gemini [{model_name} - lần {attempt + 1}/2]: "
+                        f"{err_msg[:300]}"
+                    )
+                    if not retryable:
                         break
+                    if attempt == 0:
+                        time.sleep(2)
 
     # --- LỚP BẢO HIỂM SIÊU TỐC (1-REQUEST BATCH FALLBACK) ---
     print("⚡ Đang kích hoạt Fallback Translator (Chế độ gộp 1-Request, tốn ~0.5s)...")
@@ -85,6 +118,11 @@ def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
         # Trường hợp hiếm bị gộp dòng mới dịch lẻ
         return {k: translator.translate(v) if v.strip() else "" for k, v in ja_dict.items()}
 
+    except ImportError:
+        print(
+            "⚠️ Chưa cài deep-translator. Cài bằng: "
+            "python -m pip install deep-translator"
+        )
     except Exception as fb_err:
         print(f"⚠️ Lỗi Fallback Translator: {fb_err}")
         return {}

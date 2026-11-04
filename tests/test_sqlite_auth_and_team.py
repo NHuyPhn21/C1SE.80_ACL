@@ -57,6 +57,9 @@ class SqliteAuthAndTeamTests(unittest.TestCase):
         self.assertEqual(len(members), 2)
         self.assertEqual(members[1].role, "Typesetter")
 
+        self.team.remove_member(project.id, int(member.user.id))
+        self.assertEqual(len(self.team.list_members(project.id)), 1)
+
         db = self.session_factory()
         self.assertEqual(db.query(Project).count(), 1)
         db.close()

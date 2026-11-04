@@ -96,9 +96,14 @@ all_pages = []
 current_page = None
 page_idx = 1
 total_pages = 1
+rendered_pages_count = 0
 
 try:
     all_pages = db.query(ComicPage).order_by(ComicPage.id.asc()).all()
+    rendered_pages_count = sum(
+        1 for page in all_pages
+        if page.status == "COMPLETED" or bool(page.rendered_path)
+    )
     req_page_id = st.query_params.get("page_id")
 
     if req_page_id and str(req_page_id).isdigit():
@@ -156,7 +161,7 @@ st.markdown(
     f"""
     <div class="top-breadcrumb">
         <div>ACL Studio &nbsp;/&nbsp; Manga Batch #104 &nbsp;/&nbsp; Post-Processing &nbsp;/&nbsp; <strong style="color:#1C274C;">Live Typesetting Studio</strong></div>
-        <div class="node-status"><span class="node-dot"></span> Collision Avoidance Matrix: Active</div>
+        <div class="node-status"><span class="node-dot"></span> {rendered_pages_count}/{total_pages} Pages Rendered</div>
     </div>
     """,
     unsafe_allow_html=True,

@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.database import Base
-from backend.models import Chapter, ComicPage, Project, User
+from backend.models import Chapter, ComicPage, ProjectMembership, User
 from services.queue_service import QueueService, build_rendered_zip
 from services.workspace_service import WorkspaceService, WorkspaceServiceError
 
@@ -39,6 +39,10 @@ class WorkspaceAndQueueTests(unittest.TestCase):
             self.owner_id, "Manga A", "Japanese to Vietnamese"
         )
         db = self.session_factory()
+        owner_membership = db.query(ProjectMembership).filter_by(
+            project_id=project_id, user_id=self.owner_id
+        ).one()
+        self.assertEqual(owner_membership.project_role, "Owner")
         chapter = Chapter(project_id=project_id, chapter_number=1)
         db.add(chapter)
         db.flush()
