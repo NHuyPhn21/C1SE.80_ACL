@@ -312,20 +312,13 @@ font {{
 <!-- FIXED LEFT SIDEBAR (Matching Image 4) -->
 <aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-lowest z-50 flex flex-col justify-between py-5 border-r border-[#E4DFD6]">
   <div>
-    <!-- Brand / Logo Area: Crisp Magic Wand Icon Badge & High Contrast Branding -->
-    <div class="px-4 mb-6 flex items-center gap-3 cursor-pointer select-none" onclick="navigateParent('workspace')" title="ACL - Automated Comic Localization">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1C274C] via-[#243363] to-[#2B3B6D] text-white flex items-center justify-center shadow-md shadow-[#1C274C]/25 border border-[#1C274C]/20 shrink-0">
-        <svg width="20" height="20" viewBox="0 0 17.5 17.5" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M15 5L14.2083 3.29167L12.5 2.5L14.2083 1.70833L15 0L15.7917 1.70833L17.5 2.5L15.7917 3.29167L15 5V5M5.41667 5L4.625 3.29167L2.91667 2.5L4.625 1.70833L5.41667 0L6.20833 1.70833L7.91667 2.5L6.20833 3.29167L5.41667 5V5M15 14.5833L14.2083 12.875L12.5 12.0833L14.2083 11.2917L15 9.58333L15.7917 11.2917L17.5 12.0833L15.7917 12.875L15 14.5833V14.5833M2.58333 17.25L0.25 14.9167C0.0833333 14.75 0 14.5486 0 14.3125C0 14.0764 0.0833333 13.875 0.25 13.7083L9.54167 4.41667C9.70833 4.25 9.90972 4.16667 10.1458 4.16667C10.3819 4.16667 10.5833 4.25 10.75 4.41667L13.0833 6.75C13.25 6.91667 13.3333 7.11806 13.3333 7.35417C13.3333 7.59028 13.25 7.79167 13.0833 7.95833L3.79167 17.25C3.625 17.4167 3.42361 17.5 3.1875 17.5C2.95139 17.5 2.75 17.4167 2.58333 17.25V17.25M3.20833 15.5L9.16667 9.5L8 8.33333L2 14.2917L3.20833 15.5V15.5" fill="white"/>
-        </svg>
+    <!-- Brand / Logo Area: Minimalist Typography with Accent Brand Dot -->
+    <div class="px-5 mb-6 cursor-pointer select-none transition-opacity hover:opacity-90" onclick="navigateParent('workspace')" title="ACL - Automated Comic Localization">
+      <div class="flex items-baseline gap-1.5">
+        <span class="font-headline text-[24px] font-black text-[#1C274C] tracking-tighter leading-none">ACL</span>
+        <span class="w-2 h-2 rounded-full bg-[#1C274C] inline-block"></span>
       </div>
-      <div class="min-w-0">
-        <div class="flex items-center gap-1.5">
-          <h1 class="font-headline text-[17px] font-black text-[#1C274C] tracking-tight leading-none">ACL</h1>
-          <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#1C274C]/10 text-[#1C274C]">STUDIO</span>
-        </div>
-        <p class="text-[10px] text-on-surface-variant font-medium mt-1 leading-snug">Automated Comic<br><span class="text-primary-container font-semibold">Localization</span></p>
-      </div>
+      <p class="text-[10.5px] text-[#64748B] font-medium tracking-tight mt-1 leading-tight">Automated Comic Localization</p>
     </div>
     
     <!-- Navigation Links -->
