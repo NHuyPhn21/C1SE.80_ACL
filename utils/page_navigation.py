@@ -15,8 +15,16 @@ def render_page_navigation() -> None:
         
         /* Custom Sidebar Background and Width */
         [data-testid="stSidebar"] {
+            display: block !important;
+            visibility: visible !important;
+            transform: none !important;
             background-color: #FFFFFF !important;
             border-right: 1px solid #EAEAEA !important;
+            width: 250px !important;
+            min-width: 250px !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] {
+            display: none !important;
         }
         [data-testid="stSidebar"] > div:first-child {
             padding-top: 1.25rem !important;
