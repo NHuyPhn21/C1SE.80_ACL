@@ -317,7 +317,6 @@ font {{
       </div>
       <p class="text-[10.5px] text-[#64748B] font-medium tracking-tight mt-1 leading-tight">Automated Comic Localization</p>
     </div>
-    </div>
     
     <!-- Navigation Links -->
     <nav class="px-3 flex flex-col gap-1">
