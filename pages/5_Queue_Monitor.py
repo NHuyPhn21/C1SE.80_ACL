@@ -209,18 +209,26 @@ step6_icon = "✓" if processed_pages > 0 else "6"
 step6_bg = "bg-secondary-container text-secondary" if processed_pages > 0 else "bg-surface-container-high text-on-surface-variant"
 step7_icon = "✓" if (total_pages > 0 and processed_pages == total_pages) else "7"
 step7_bg = "bg-secondary-container/50 text-secondary" if (total_pages > 0 and processed_pages == total_pages) else "bg-surface-container-high text-on-surface-variant"
-step7_label = "ZIP Ready →" if (total_pages > 0 and processed_pages == total_pages) else "Standby"
+step7_label = "ZIP Ready →" if (total_pages > 0 and processed_pages == total_pages) else "ZIP Export →"
 
 if total_pages > 0 and processed_pages > 0 and real_zip_b64:
-    download_block = f"""<a class="text-primary-container hover:underline cursor-pointer flex items-center gap-1 font-bold text-xs" onclick="downloadZipArchive()">
-      <span class="material-symbols-outlined text-[15px]">download</span>
-      <span>Download Full Chapter Package ({zip_size_display} ZIP)</span>
-    </a>"""
+    top_zip_button = f"""<button type="button" onclick="downloadZipArchive()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-container text-on-primary font-bold text-xs hover:opacity-90 transition-all cursor-pointer shadow-sm shrink-0">
+      <span class="material-symbols-outlined text-[18px]">download</span>
+      <span>Download Chapter ZIP ({zip_size_display})</span>
+    </button>"""
+    download_block = f"""<button type="button" onclick="downloadZipArchive()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-container text-on-primary font-bold text-xs hover:opacity-90 transition-all cursor-pointer shadow-sm">
+      <span class="material-symbols-outlined text-[18px]">download</span>
+      <span>Download Chapter Package ({zip_size_display} ZIP)</span>
+    </button>"""
 else:
-    download_block = """<span class="text-on-surface-variant font-medium flex items-center gap-1 text-xs">
-      <span class="material-symbols-outlined text-[15px] text-outline">folder_zip</span>
-      <span>Chapter Package (0 rendered pages available)</span>
-    </span>"""
+    top_zip_button = """<button type="button" onclick="downloadZipArchive()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#D0D7DE] bg-white text-on-surface hover:bg-surface-container font-semibold text-xs transition-all cursor-pointer shadow-sm shrink-0" title="Bấm để tải file ZIP chương">
+      <span class="material-symbols-outlined text-[18px] text-primary-container">folder_zip</span>
+      <span>Export ZIP</span>
+    </button>"""
+    download_block = """<button type="button" onclick="downloadZipArchive()" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-[#D0D7DE] bg-white hover:bg-surface-container text-on-surface font-semibold text-xs transition-all cursor-pointer shadow-sm" title="Bấm để tải file ZIP chương">
+      <span class="material-symbols-outlined text-[16px] text-primary-container">folder_zip</span>
+      <span>Download Chapter Package (ZIP)</span>
+    </button>"""
 
 terminal_logs = f"""
 <div class="text-[#8b949e]"><span class="text-[#58a6ff]">[INFO]</span> Local pipeline worker daemon initialized. Project: <strong>{escape(project_name)}</strong>.</div>
@@ -451,9 +459,12 @@ font {{
             <h2 class="font-headline text-xl font-bold text-on-surface">Active Chapter: {escape(project_name)}</h2>
             <span class="px-2.5 py-0.5 rounded-md bg-surface-container-high text-on-surface-variant font-code text-xs font-semibold">{batch_code}</span>
           </div>
-          <div class="text-right">
-            <div class="font-headline text-base font-bold text-on-surface">{processed_pages} / {total_pages} Pages Processed ({progress_pct}%)</div>
-            <div class="font-code text-xs text-on-surface-variant">Estimated completion: {est_completion}</div>
+          <div class="flex items-center gap-4">
+            <div class="text-right">
+              <div class="font-headline text-base font-bold text-on-surface">{processed_pages} / {total_pages} Pages Processed ({progress_pct}%)</div>
+              <div class="font-code text-xs text-on-surface-variant">Estimated completion: {est_completion}</div>
+            </div>
+            {top_zip_button}
           </div>
         </div>
 
@@ -494,10 +505,10 @@ font {{
             <span class="text-xs font-semibold text-on-surface">6. Typesetting</span>
             <span class="font-code text-[10px] text-on-surface-variant">Typography →</span>
           </div>
-          <div class="flex flex-col items-center text-center p-2 rounded-xl bg-surface-container-low border border-[#E4DFD6]">
+          <div onclick="downloadZipArchive()" class="flex flex-col items-center text-center p-2 rounded-xl bg-surface-container-low border border-[#E4DFD6] hover:border-primary-container/40 transition-all cursor-pointer" title="Bấm để tải file ZIP chương">
             <div class="w-7 h-7 rounded-full {step7_bg} flex items-center justify-center mb-1 text-xs font-bold">{step7_icon}</div>
             <span class="text-xs font-semibold text-on-surface">7. Completed</span>
-            <span class="font-code text-[10px] text-on-surface-variant">{step7_label}</span>
+            <span class="font-code text-[10px] text-primary-container font-bold">{step7_label}</span>
           </div>
         </div>
       </div>
@@ -686,7 +697,7 @@ function downloadZipArchive() {{
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }} else {{
-    alert('No rendered pages available to download yet.');
+    alert('Chưa có trang nào hoàn thành để xuất file ZIP.\\n\\nHiện tại dự án chưa có ảnh nào được render xong qua pipeline AI.\\nBạn hãy vào mục \"Chapter Studio\" để tải ảnh lên và chạy pipeline trước nhé!');
   }}
 }}
 
