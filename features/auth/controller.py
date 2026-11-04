@@ -9,12 +9,17 @@ from services.auth_service import AuthServiceError, get_auth_service
 from utils.auth_session import (
     establish_session,
     is_authenticated,
+    logout,
     pop_auth_error,
     set_auth_error,
 )
 
 
 def render_auth_page(initial_view: str) -> None:
+    if st.query_params.get("logout"):
+        logout()
+        st.query_params.pop("logout", None)
+
     if is_authenticated():
         st.switch_page("pages/1_Workspace.py")
         return

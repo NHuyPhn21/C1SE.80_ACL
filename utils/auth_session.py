@@ -1,12 +1,16 @@
 """Authentication state and route guards backed by Streamlit session state."""
 
 from datetime import UTC, datetime, timedelta
+import json
+import os
+from pathlib import Path
 
 import streamlit as st
 
 from models.auth import AuthResult, AuthTokens, User
 from services.auth_service import AuthServiceError, get_auth_service
 
+SESSION_FILE = Path(__file__).resolve().parents[1] / "data" / ".auth_session.json"
 
 AUTHENTICATED = "auth.authenticated"
 USER = "auth.user"
@@ -27,6 +31,72 @@ _AUTH_KEYS = (
 )
 
 
+def _save_persistent_session(user_dict: dict, tokens: AuthTokens, remember_me: bool) -> None:
+    try:
+        SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "authenticated": True,
+            "user": user_dict,
+            "access_token": tokens.access_token,
+            "refresh_token": tokens.refresh_token,
+            "expires_in": tokens.expires_in,
+            "remember_me": remember_me,
+            "saved_at": datetime.now(UTC).isoformat(),
+        }
+        SESSION_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _clear_persistent_session() -> None:
+    try:
+        if SESSION_FILE.exists():
+            SESSION_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _load_persistent_session() -> bool:
+    try:
+        if not SESSION_FILE.exists():
+            return False
+        content = SESSION_FILE.read_text(encoding="utf-8")
+        data = json.loads(content)
+        if not data.get("authenticated") or not data.get("user"):
+            return False
+
+        user_email = data["user"].get("email")
+        if not user_email:
+            return False
+
+        # Verify against SQLite users table if using sqlite backend
+        from backend.database import SessionLocal
+        from backend.models import User as DbUser
+
+        db = SessionLocal()
+        try:
+            db_u = db.query(DbUser).filter_by(email=user_email).first()
+            if not db_u:
+                _clear_persistent_session()
+                return False
+        finally:
+            db.close()
+
+        initialize_auth_state()
+        st.session_state[AUTHENTICATED] = True
+        st.session_state[USER] = data["user"]
+        st.session_state[REMEMBER_ME] = bool(data.get("remember_me", False))
+        tokens = AuthTokens(
+            access_token=str(data.get("access_token") or "local_access_token"),
+            refresh_token=data.get("refresh_token"),
+            expires_in=data.get("expires_in") or 3600,
+        )
+        _store_tokens(tokens)
+        return True
+    except Exception:
+        return False
+
+
 def initialize_auth_state() -> None:
     st.session_state.setdefault(AUTHENTICATED, False)
     st.session_state.setdefault(USER, None)
@@ -39,15 +109,21 @@ def initialize_auth_state() -> None:
 def establish_session(result: AuthResult, remember_me: bool = False) -> None:
     initialize_auth_state()
     st.session_state[AUTHENTICATED] = True
-    st.session_state[USER] = result.user.to_session()
+    user_payload = result.user.to_session()
+    st.session_state[USER] = user_payload
     st.session_state[REMEMBER_ME] = remember_me
+    st.session_state["auth.logged_out"] = False
     _store_tokens(result.tokens)
     st.session_state.pop(ERROR, None)
+    _save_persistent_session(user_payload, result.tokens, remember_me)
 
 
 def is_authenticated() -> bool:
     initialize_auth_state()
     if not st.session_state[AUTHENTICATED]:
+        if not st.session_state.get("auth.logged_out", False):
+            if _load_persistent_session():
+                return _refresh_if_needed()
         return False
     return _refresh_if_needed()
 
@@ -67,9 +143,19 @@ def current_user() -> User | None:
 
 
 def require_auth() -> User:
+    if st.query_params.get("logout"):
+        logout()
+        st.query_params.pop("logout", None)
+        st.switch_page("pages/0_Login.py")
+        st.stop()
+
     user = current_user()
     if user is None:
-        import os
+        if not st.session_state.get("auth.logged_out", False):
+            if _load_persistent_session():
+                user = current_user()
+
+    if user is None:
         mode = os.getenv("AUTH_BACKEND_MODE", "sqlite").strip().lower()
         if mode == "mock" and not st.session_state.get("auth.logged_out", False):
             try:
@@ -97,6 +183,8 @@ def logout() -> None:
         pass
     finally:
         clear_session()
+        _clear_persistent_session()
+        st.session_state["auth.logged_out"] = True
 
 
 def clear_session() -> None:
