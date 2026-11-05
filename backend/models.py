@@ -22,6 +22,22 @@ class User(Base):
     # Quan hệ (Relationships) - Thêm cascade để dọn dẹp dữ liệu khi User bị xóa
     projects_owned = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
     memberships = relationship("ProjectMembership", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship(
+        "PasswordResetToken", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class PasswordResetToken(Base):
+    __tablename__ = 'password_reset_tokens'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="password_reset_tokens")
 
 class Project(Base):
     __tablename__ = 'projects'

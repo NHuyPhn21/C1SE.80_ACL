@@ -131,6 +131,28 @@ class HttpAuthServiceTests(unittest.TestCase):
             {"refresh_token": "refresh"},
         )
 
+    def test_password_reset_uses_configured_api_contract(self) -> None:
+        self.client.request.side_effect = [
+            _response(202, {}),
+            _response(200, {"valid": True}),
+            _response(204),
+        ]
+
+        token = self.service.request_password_reset("user@example.com")
+        valid = self.service.verify_password_reset_token("reset-token")
+        self.service.reset_password("reset-token", "newpassword")
+
+        self.assertIsNone(token)
+        self.assertTrue(valid)
+        calls = self.client.request.call_args_list
+        self.assertEqual(calls[0].args[1], "http://api.example.test/v1/auth/forgot-password")
+        self.assertEqual(calls[0].kwargs["json"], {"email": "user@example.com"})
+        self.assertEqual(calls[1].kwargs["json"], {"token": "reset-token"})
+        self.assertEqual(
+            calls[2].kwargs["json"],
+            {"token": "reset-token", "new_password": "newpassword"},
+        )
+
     def test_fastapi_validation_errors_are_user_readable(self) -> None:
         self.client.request.return_value = _response(
             422, {"detail": [{"msg": "invalid email"}, {"msg": "password too short"}]}

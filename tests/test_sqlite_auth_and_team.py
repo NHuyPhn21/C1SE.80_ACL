@@ -1,11 +1,12 @@
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.database import Base
-from backend.models import Project, User
+from backend.models import PasswordResetToken, Project, User
 from services.auth_service import AuthServiceError, SqliteAuthService, verify_password
 from services.team_service import TeamService, TeamServiceError
 
@@ -43,6 +44,37 @@ class SqliteAuthAndTeamTests(unittest.TestCase):
             self.auth.login("huy@example.com", "wrongpass", False)
         with self.assertRaises(AuthServiceError):
             self.auth.register("Other", "huy@example.com", "password123")
+
+    def test_password_reset_token_is_single_use_and_changes_password(self) -> None:
+        self.auth.register("Huy Phan", "huy@example.com", "password123")
+
+        token = self.auth.request_password_reset("huy@example.com")
+
+        self.assertIsNotNone(token)
+        self.assertTrue(self.auth.verify_password_reset_token(str(token)))
+        self.auth.reset_password(str(token), "newpassword123")
+        self.assertFalse(self.auth.verify_password_reset_token(str(token)))
+        with self.assertRaises(AuthServiceError):
+            self.auth.login("huy@example.com", "password123", False)
+        logged_in = self.auth.login("huy@example.com", "newpassword123", False)
+        self.assertEqual(logged_in.user.email, "huy@example.com")
+
+    def test_password_reset_does_not_reveal_unknown_email(self) -> None:
+        token = self.auth.request_password_reset("missing@example.com")
+        self.assertIsNone(token)
+
+    def test_expired_password_reset_token_is_rejected(self) -> None:
+        self.auth.register("Huy Phan", "huy@example.com", "password123")
+        token = self.auth.request_password_reset("huy@example.com")
+        db = self.session_factory()
+        stored = db.query(PasswordResetToken).one()
+        stored.expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1)
+        db.commit()
+        db.close()
+
+        self.assertFalse(self.auth.verify_password_reset_token(str(token)))
+        with self.assertRaisesRegex(AuthServiceError, "invalid or has expired"):
+            self.auth.reset_password(str(token), "newpassword123")
 
     def test_invite_creates_and_updates_project_membership(self) -> None:
         owner = self.auth.register("Owner", "owner@example.com", "password123")
