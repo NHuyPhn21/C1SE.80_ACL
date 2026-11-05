@@ -1,5 +1,6 @@
 """Dynamic project Workspace backed by SQLite (100% Streamlit Native, 100% Matching Stitch UI)."""
 
+import base64
 from html import escape
 import os
 from pathlib import Path
@@ -18,7 +19,7 @@ render_page_navigation()
 try:
     user_id = int(user.id)
 except (ValueError, TypeError):
-    st.error("Tài khoản người dùng không hợp lệ. Vui lòng đăng nhập lại.")
+    st.error("Invalid user account. Please log in again.")
     st.stop()
 
 workspace_service = WorkspaceService()
@@ -31,7 +32,7 @@ except Exception:
     pass
 
 user_initials = (user.full_name[:2] if user.full_name else "PH").upper()
-user_display_name = user.full_name or "Phan Văn Quân"
+user_display_name = user.full_name or "Phanvanquann26"
 
 # 2. Tính toán dung lượng lưu trữ thực tế từ thư mục data/
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -53,7 +54,17 @@ try:
 except Exception:
     in_queue_count = 0
 
-# 4. CSS cục bộ chuyên nghiệp (Khôi phục 100% Giao diện cũ theo Ảnh 2)
+# 4. Avatar file check (ảnh đại diện nếu có)
+avatar_data_uri = None
+for ext in (".png", ".jpg", ".jpeg"):
+    candidate = BASE_DIR / "data" / "avatars" / f"user_{user.id}{ext}"
+    if candidate.exists():
+        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+        b64 = base64.b64encode(candidate.read_bytes()).decode("ascii")
+        avatar_data_uri = f"data:{mime};base64,{b64}"
+        break
+
+# 5. CSS cục bộ chuyên nghiệp (Khôi phục 100% Giao diện cũ theo Ảnh 2)
 st.markdown(
     """
     <style>
@@ -71,14 +82,6 @@ st.markdown(
     }
 
     /* Top Navbar Row: Phẳng, Tinh tế, không bọc khung hộp dày */
-    .top-nav-bar-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.5rem 0 1rem 0;
-        border-bottom: 1px solid #EAEAEA;
-        margin-bottom: 1.5rem;
-    }
     .top-breadcrumb-box {
         display: flex;
         align-items: center;
@@ -126,26 +129,137 @@ st.markdown(
         white-space: nowrap;
     }
 
-    /* Popover button in Top Bar (Avatar circle PH with dropdown arrow) */
+    .icon-box-circle {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        font-size: 14px;
+        cursor: pointer;
+    }
+    .icon-red-dot {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background-color: #EF4444;
+    }
+
+    /* Popover Trigger Capsule Button matching Image 2 [ (PH) ⌵ ] */
+    .top-avatar-popover {
+        display: flex;
+        justify-content: flex-end;
+    }
     .top-avatar-popover div[data-testid="stPopover"] > button {
-        background-color: #1C274C !important;
-        color: #FFFFFF !important;
+        background-color: #FFFFFF !important;
+        border: 1.5px solid #111827 !important;
         border-radius: 9999px !important;
-        border: none !important;
-        font-weight: 800 !important;
-        font-size: 0.85rem !important;
-        padding: 5px 14px !important;
-        box-shadow: 0 2px 6px rgba(28, 39, 76, 0.15) !important;
-        display: flex !important;
+        padding: 3px 8px 3px 3px !important;
+        height: 38px !important;
+        min-height: 38px !important;
+        display: inline-flex !important;
         align-items: center !important;
         gap: 6px !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+        transition: all 0.15s ease !important;
     }
     .top-avatar-popover div[data-testid="stPopover"] > button:hover {
-        background-color: #0F172A !important;
+        background-color: #F8FAFC !important;
+        border-color: #000000 !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
     }
-    .top-avatar-popover div[data-testid="stPopover"] > button p {
+    .top-avatar-popover div[data-testid="stPopover"] > button > div p {
+        background-color: #1C274C !important;
         color: #FFFFFF !important;
         font-weight: 800 !important;
+        font-size: 11px !important;
+        border-radius: 50% !important;
+        width: 28px !important;
+        height: 28px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 0 !important;
+        letter-spacing: -0.02em !important;
+    }
+    .top-avatar-popover div[data-testid="stPopover"] > button svg {
+        color: #111827 !important;
+        fill: #111827 !important;
+        width: 14px !important;
+        height: 14px !important;
+        margin-right: 2px !important;
+    }
+
+    /* Popover dropdown container matching Image 2 */
+    div[data-testid="stPopoverBody"] {
+        padding: 1.25rem 1.15rem !important;
+        border-radius: 16px !important;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12) !important;
+        border: 1px solid #E2E8F0 !important;
+        min-width: 270px !important;
+    }
+
+    /* User Menu Links in English */
+    div[data-testid="stPopoverBody"] div.stPageLink {
+        margin-bottom: 4px !important;
+    }
+    div[data-testid="stPopoverBody"] div.stPageLink a {
+        border-radius: 8px !important;
+        padding: 8px 10px !important;
+        color: #475569 !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        transition: all 0.15s ease !important;
+        text-decoration: none !important;
+        background: transparent !important;
+    }
+    div[data-testid="stPopoverBody"] div.stPageLink a:hover {
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+    }
+    div[data-testid="stPopoverBody"] div.stPageLink a p,
+    div[data-testid="stPopoverBody"] div.stPageLink a span {
+        color: #475569 !important;
+        font-weight: 500 !important;
+    }
+    div[data-testid="stPopoverBody"] div.stPageLink a:hover p,
+    div[data-testid="stPopoverBody"] div.stPageLink a:hover span {
+        color: #0F172A !important;
+    }
+
+    /* Sign out button matching Image 2 */
+    div[data-testid="stPopoverBody"] div[data-testid="stButton"] > button {
+        background-color: transparent !important;
+        border: none !important;
+        color: #DC2626 !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        padding: 8px 10px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        gap: 10px !important;
+        border-radius: 8px !important;
+        width: 100% !important;
+        transition: all 0.15s ease !important;
+    }
+    div[data-testid="stPopoverBody"] div[data-testid="stButton"] > button:hover {
+        background-color: #FEF2F2 !important;
+        color: #B91C1C !important;
+    }
+    div[data-testid="stPopoverBody"] div[data-testid="stButton"] > button p {
+        color: #DC2626 !important;
+        font-weight: 600 !important;
     }
 
     /* Main Page Header */
@@ -362,9 +476,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 5. Top Navbar (Chuẩn xác 100% theo Ảnh 2 của bạn)
-nav_col_left, nav_col_search, nav_col_node, nav_col_user = st.columns(
-    [2.6, 3.2, 2.2, 1.4], vertical_alignment="center"
+# 6. Top Navbar (Chuẩn xác 100% theo Ảnh 2: Breadcrumb, Search Pill, Node Badge, Bell, Slider, Capsule Avatar)
+nav_col_left, nav_col_search, nav_col_node, nav_col_icons, nav_col_user = st.columns(
+    [2.3, 3.1, 2.1, 0.9, 0.8], vertical_alignment="center"
 )
 
 with nav_col_left:
@@ -400,31 +514,52 @@ with nav_col_node:
         unsafe_allow_html=True,
     )
 
+with nav_col_icons:
+    st.markdown(
+        """
+        <div style="display:flex; align-items:center; gap:8px;">
+            <div class="icon-box-circle">
+                <span>🔔</span>
+                <span class="icon-red-dot"></span>
+            </div>
+            <div class="icon-box-circle">
+                <span>🎛️</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 with nav_col_user:
     st.markdown('<div class="top-avatar-popover">', unsafe_allow_html=True)
-    with st.popover(f"👤 {user_initials} ▾", use_container_width=True):
+    with st.popover(label=f"{user_initials}", use_container_width=False):
+        if avatar_data_uri:
+            avatar_html = f'<img src="{avatar_data_uri}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid #E2E8F0;" />'
+        else:
+            avatar_html = f'<div style="width:44px; height:44px; border-radius:50%; background:#1C274C; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; flex-shrink:0;">{user_initials}</div>'
+
         st.markdown(
             f"""
-            <div style="display:flex; align-items:center; gap:12px; padding:4px 0 8px 0;">
-                <div style="width:40px; height:40px; border-radius:50%; background:#1C274C; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px;">
-                    {user_initials}
-                </div>
+            <div style="display:flex; align-items:center; gap:12px; padding:4px 0 10px 0;">
+                {avatar_html}
                 <div>
-                    <div style="font-weight:800; font-size:14px; color:#1A1D1F;">{escape(user_display_name)}</div>
-                    <div style="font-size:11px; color:#64748B;">{escape(user.email or '')}</div>
+                    <div style="font-weight:700; font-size:15px; color:#111827; line-height:1.2;">{escape(user_display_name)}</div>
+                    <div style="font-size:12px; color:#64748B; margin:2px 0 4px 0;">{escape(user.email or '')}</div>
+                    <div>
+                        <span style="background:#EFF6FF; color:#2563EB; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px;">
+                            <span style="width:5px; height:5px; border-radius:50%; background:#2563EB;"></span>
+                            Lead Editor
+                        </span>
+                    </div>
                 </div>
-            </div>
-            <div style="margin-bottom:12px;">
-                <span style="background:#E0E7FF; color:#3730A3; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px;">
-                    👑 {escape(user.role or 'Owner').upper()}
-                </span>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        st.page_link("pages/3_Settings.py", label="Cài đặt tài khoản", icon="⚙️")
+        st.page_link("pages/3_Settings.py", label="Personal Settings", icon="👤")
+        st.page_link("pages/1_Team_Workspace.py", label="Team Workspace", icon="👥")
         st.divider()
-        if st.button("🚪 Đăng xuất", key="popover_logout_btn", use_container_width=True):
+        if st.button("🚪 Sign out", key="popover_signout_btn", use_container_width=True):
             logout()
             st.switch_page("pages/0_Login.py")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -432,18 +567,18 @@ with nav_col_user:
 st.markdown('<div style="height: 1.5rem; border-bottom: 1px solid #EAEAEA; margin-bottom: 1.75rem;"></div>', unsafe_allow_html=True)
 
 
-# 6. Modal Dialog Tạo Dự Án Mới
-@st.dialog("Tạo Dự Án Dịch Thuật Mới")
+# 7. Modal Dialog Tạo Dự Án Mới
+@st.dialog("Create New Project")
 def create_project_dialog() -> None:
     with st.form("create_project_modal_form"):
-        title = st.text_input("Tên bộ truyện / Manga *", placeholder="Ví dụ: Chainsaw Man — Chapter 150")
+        title = st.text_input("Series Title / Manga Name *", placeholder="e.g. Chainsaw Man — Chapter 150")
         description = st.text_area(
-            "Ghi chú dự án", placeholder="Cặp ngôn ngữ: JP ➔ VI, ghi chú font chữ, độ phân giải..."
+            "Project Notes", placeholder="Language pair: JP ➔ VI, font guidelines, resolution..."
         )
-        submitted = st.form_submit_button("Xác nhận tạo dự án", use_container_width=True)
+        submitted = st.form_submit_button("Confirm & Create", use_container_width=True)
     if submitted:
         if not title.strip():
-            st.error("Vui lòng nhập tên dự án.")
+            st.error("Please enter a project title.")
             return
         try:
             new_p_id = workspace_service.create_project(user_id, title.strip(), description.strip())
@@ -451,13 +586,13 @@ def create_project_dialog() -> None:
             st.session_state["current_project_title"] = title.strip()
             st.query_params["project_id"] = str(new_p_id)
             st.query_params["project"] = title.strip()
-            st.success(f"Khởi tạo dự án '{title.strip()}' thành công!")
+            st.success(f"Project '{title.strip()}' created successfully!")
             st.rerun()
         except WorkspaceServiceError as exc:
-            st.error(f"Lỗi khởi tạo: {exc}")
+            st.error(f"Creation error: {exc}")
 
 
-# 7. Tiêu đề Trang & Nút Tạo Dự Án (Navy Pill Chuẩn Ảnh 2)
+# 8. Tiêu đề Trang & Nút Tạo Dự Án (Navy Pill Chuẩn Ảnh 2)
 head_left, head_right = st.columns([3.8, 1.3], vertical_alignment="center")
 with head_left:
     st.markdown('<h1 class="main-page-title">Projects</h1>', unsafe_allow_html=True)
@@ -471,7 +606,7 @@ with head_right:
         create_project_dialog()
     st.markdown("</div>", unsafe_allow_html=True)
 
-# 8. Truy vấn danh sách dự án thật từ SQLite
+# 9. Truy vấn danh sách dự án thật từ SQLite
 projects = workspace_service.list_projects(user_id)
 
 display_projects = projects
@@ -479,10 +614,10 @@ if search_keyword.strip():
     kw = search_keyword.strip().lower()
     display_projects = [p for p in display_projects if kw in p.title.lower() or kw in p.description.lower()]
 
-# 9. Lưới Thẻ Truyện (Exact Project Cards từ Ảnh 2, Không có thẻ dashed thừa)
+# 10. Lưới Thẻ Truyện (Exact Project Cards từ Ảnh 2)
 if not display_projects:
-    st.info("Không tìm thấy bộ truyện nào phù hợp với bộ lọc hiện tại.")
-    if st.button("Khởi tạo bộ truyện ngay", key="btn_empty_create"):
+    st.info("No projects found matching the current search.")
+    if st.button("Create project now", key="btn_empty_create"):
         create_project_dialog()
 else:
     for start in range(0, len(display_projects), 3):
@@ -531,7 +666,7 @@ else:
                     st.switch_page("pages/2_Chapter_Studio.py")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-# 10. Hàng 3 Thẻ Metric Thống Kê ở Dưới Cùng (Chuẩn xác 100% theo Ảnh 2)
+# 11. Hàng 3 Thẻ Metric Thống Kê ở Dưới Cùng (Chuẩn xác 100% theo Ảnh 2)
 st.markdown('<div class="metric-row-wrap">', unsafe_allow_html=True)
 stat_c1, stat_c2, stat_c3 = st.columns(3, gap="large")
 
