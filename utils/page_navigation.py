@@ -37,7 +37,7 @@ def render_page_navigation() -> None:
             margin-top: 0 !important;
         }
         [data-testid="stSidebar"] > div:first-child {
-            padding-top: 0.75rem !important;
+            padding-top: 1.15rem !important;
             padding-left: 0.85rem !important;
             padding-right: 0.85rem !important;
             background-color: #FFFFFF !important;
@@ -46,9 +46,9 @@ def render_page_navigation() -> None:
             display: none !important;
         }
         
-        /* Brand Header xích lên ngang bằng thanh Topbar */
+        /* Brand Header xích lên ngang bằng thanh Topbar chuẩn Figma */
         .sidebar-brand-box {
-            padding: 0.1rem 0.5rem 0.85rem 0.5rem !important;
+            padding: 0.25rem 0.5rem 1.25rem 0.5rem !important;
             margin-top: 0 !important;
             margin-bottom: 0.2rem !important;
         }

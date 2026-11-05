@@ -76,41 +76,25 @@ st.markdown(
         color: #1A1D1F !important;
     }
     
-    /* Khắc phục lỗi 'Ảnh 2 cách xa nhau quá': Xóa sạch lề auto khổng lồ bên trái của Streamlit */
+    /* Khắc phục lề lệch và đồng bộ kích thước chuẩn Figma */
     [data-testid="stMainBlockContainer"],
     .stMainBlockContainer {
-        padding: 0.85rem 2rem 3.5rem 2rem !important;
-        max-width: 100% !important;
-        width: 100% !important;
+        padding: 1.25rem 2.25rem 4rem 2.25rem !important;
+        max-width: 1360px !important;
         margin-left: 0 !important;
-        margin-right: 0 !important;
     }
     [data-testid="stAppViewBlockContainer"] {
         padding-left: 0 !important;
     }
 
-    /* KHỐI TOP NAVBAR RIÊNG BIỆT (Ảnh 1 & 2): Khoảng màu trắng #FFFFFF độc lập, 100% thẳng hàng 38px */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type {
-        background: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
-        border-radius: 20px !important;
-        padding: 0.5rem 1.25rem !important;
-        box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04) !important;
-        margin-bottom: 1.75rem !important;
-        overflow: visible !important; /* QUAN TRỌNG: Để mở Popover dropdown không bị che khuất */
-    }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type > div {
-        overflow: visible !important;
-    }
-
-    /* Đảm bảo toàn bộ hệ thống Flex trong Top Navbar căn giữa hoàn hảo */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stHorizontalBlock"] {
+    /* TOP NAVBAR ROW: Đồng bộ 100% Figma, Phẳng, Tinh tế, không bọc hộp nổi lơ lửng */
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type {
         align-items: center !important;
         min-height: 42px !important;
         margin: 0 !important;
         gap: 0.65rem !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"] {
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
@@ -119,7 +103,7 @@ st.markdown(
         margin: 0 !important;
         padding: 0 !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
@@ -128,7 +112,7 @@ st.markdown(
         margin: 0 !important;
         gap: 0 !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stElementContainer"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stElementContainer"] {
         display: flex !important;
         align-items: center !important;
         min-height: 38px !important;
@@ -138,23 +122,32 @@ st.markdown(
     }
 
     /* Căn chỉnh theo từng cột */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(1) [data-testid="stElementContainer"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(1) [data-testid="stElementContainer"] {
         justify-content: flex-start !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(2) [data-testid="stElementContainer"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(2) [data-testid="stElementContainer"] {
         justify-content: stretch !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(3) [data-testid="stElementContainer"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(3) [data-testid="stElementContainer"] {
         justify-content: flex-end !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stElementContainer"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stElementContainer"] {
         justify-content: center !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stElementContainer"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stElementContainer"] {
         justify-content: center !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stElementContainer"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stElementContainer"] {
         justify-content: flex-end !important;
+    }
+
+    /* Đường kẻ phân cách tinh tế dưới Topbar chuẩn Figma */
+    .top-nav-divider {
+        height: 1px;
+        background-color: #E2E8F0;
+        margin-top: 0.75rem;
+        margin-bottom: 2rem;
+        width: 100%;
     }
 
     /* 1. Breadcrumb: Chữ to rõ ràng, cân đối thẩm mỹ (Khắc phục phản ánh chữ bị nhỏ) */
@@ -189,19 +182,19 @@ st.markdown(
     }
     
     /* 2. Search Bar: Chiều cao chuẩn 38px, bo tròn pill */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stTextInput"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stTextInput"] {
         margin: 0 !important;
         padding: 0 !important;
         width: 100% !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stWidgetLabel"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stWidgetLabel"] {
         display: none !important;
         height: 0 !important;
         min-height: 0 !important;
         padding: 0 !important;
         margin: 0 !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stTextInputRootElement"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stTextInputRootElement"] {
         height: 38px !important;
         min-height: 38px !important;
         max-height: 38px !important;
@@ -212,7 +205,7 @@ st.markdown(
         align-items: center !important;
         box-sizing: border-box !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stTextInputRootElement"] input {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stTextInputRootElement"] input {
         height: 36px !important;
         min-height: 36px !important;
         background-color: transparent !important;
@@ -222,7 +215,7 @@ st.markdown(
         color: #334155 !important;
         box-sizing: border-box !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stTextInputRootElement"]:focus-within {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stTextInputRootElement"]:focus-within {
         border-color: #2563EB !important;
         background-color: #FFFFFF !important;
         box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
@@ -250,7 +243,7 @@ st.markdown(
     }
 
     /* 4. Popover Buttons chung trong Topbar (Chuông, Slider, Avatar Capsule): Chiều cao chuẩn 38px */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stPopover"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stPopover"] {
         margin: 0 !important;
         padding: 0 !important;
         display: inline-flex !important;
@@ -260,10 +253,10 @@ st.markdown(
     }
 
     /* Nút icon tròn (Cột 4: Chuông & Cột 5: Settings): Tròn 38x38 chuẩn, ẩn chevron */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopoverButton"],
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopoverButton"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopoverButton"],
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopoverButton"] {
         width: 38px !important;
         min-width: 38px !important;
         max-width: 38px !important;
@@ -281,18 +274,18 @@ st.markdown(
         cursor: pointer !important;
         transition: all 0.15s ease !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button:hover,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button:hover {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button:hover,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button:hover {
         background-color: #F8FAFC !important;
         border-color: #CBD5E1 !important;
         transform: translateY(-1px);
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button svg,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button svg {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button svg,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button svg {
         display: none !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button p,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button p {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button p,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button p {
         margin: 0 !important;
         padding: 0 !important;
         font-size: 16px !important;
@@ -300,8 +293,8 @@ st.markdown(
     }
 
     /* Nút Capsule Avatar (Cột 6) [ (PH) ⌵ ] */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopoverButton"] {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopoverButton"] {
         height: 38px !important;
         min-height: 38px !important;
         max-height: 38px !important;
@@ -317,14 +310,14 @@ st.markdown(
         cursor: pointer !important;
         transition: all 0.15s ease !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button:hover {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button:hover {
         background-color: #F8FAFC !important;
         border-color: #0F172A !important;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button p,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button span,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button [data-testid="stMarkdownContainer"] p {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button p,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button span,
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button [data-testid="stMarkdownContainer"] p {
         background-color: #1C274C !important;
         color: #FFFFFF !important;
         font-weight: 800 !important;
@@ -341,7 +334,7 @@ st.markdown(
         padding: 0 !important;
         line-height: 28px !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button svg {
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button svg {
         color: #1C274C !important;
         fill: #1C274C !important;
         width: 14px !important;
@@ -629,85 +622,86 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 6. KHỐI TOP NAVBAR RIÊNG BIỆT (Khóa cứng 1 khối, 100% thẳng hàng 38px, tương tác click mượt mà)
-with st.container(border=True):
-    nav_col_left, nav_col_search, nav_col_node, nav_col_bell, nav_col_gear, nav_col_user = st.columns(
-        [2.1, 3.2, 2.4, 0.42, 0.42, 0.85], vertical_alignment="center"
+# 6. TOP NAVBAR ROW (100% Đồng bộ Figma Mockup: Phẳng, Tinh tế, Chuẩn Native)
+nav_col_left, nav_col_search, nav_col_node, nav_col_bell, nav_col_gear, nav_col_user = st.columns(
+    [2.3, 3.1, 2.3, 0.42, 0.42, 0.85], vertical_alignment="center"
+)
+
+with nav_col_left:
+    st.markdown(
+        """
+        <div class="top-breadcrumb-box">
+            <span class="top-breadcrumb-bold">ACL Studio</span>
+            <span class="top-breadcrumb-slash">/</span>
+            <span class="top-breadcrumb-current">Projects</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    with nav_col_left:
-        st.markdown(
-            """
-            <div class="top-breadcrumb-box">
-                <span class="top-breadcrumb-bold">ACL Studio</span>
-                <span class="top-breadcrumb-slash">/</span>
-                <span class="top-breadcrumb-current">Projects</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+with nav_col_search:
+    search_keyword = st.text_input(
+        "Search batches or series",
+        placeholder="🔍 Filter batches or series...",
+        label_visibility="collapsed",
+        key="top_navbar_search_input",
+    )
 
-    with nav_col_search:
-        search_keyword = st.text_input(
-            "Search batches or series",
-            placeholder="🔍 Filter batches or series...",
-            label_visibility="collapsed",
-            key="top_navbar_search_input",
-        )
+with nav_col_node:
+    st.markdown(
+        f"""
+        <div class="node-status-ready">
+            <span>⚙</span>
+            <span>Node: {hostname} (Ready)</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with nav_col_node:
+with nav_col_bell:
+    with st.popover("🔔", use_container_width=True):
+        st.markdown("**Notifications**")
+        st.caption("No new unread system notifications.")
+
+with nav_col_gear:
+    with st.popover("🎛️", use_container_width=True):
+        st.markdown("**Display Settings**")
+        st.caption("Rendering: Hardware Acceleration (DirectX/Metal)")
+        st.caption("Canvas Target: 60 FPS")
+
+with nav_col_user:
+    with st.popover(label=f"{user_initials}", use_container_width=True):
+        if avatar_data_uri:
+            avatar_html = f'<img src="{avatar_data_uri}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid #E2E8F0;" />'
+        else:
+            avatar_html = f'<div style="width:44px; height:44px; border-radius:50%; background:#1C274C; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; flex-shrink:0;">{user_initials}</div>'
+
         st.markdown(
             f"""
-            <div class="node-status-ready">
-                <span>⚙</span>
-                <span>Node: {hostname} (Ready)</span>
+            <div style="display:flex; align-items:center; gap:12px; padding:4px 0 10px 0;">
+                {avatar_html}
+                <div>
+                    <div style="font-weight:700; font-size:15px; color:#111827; line-height:1.2;">{escape(user_display_name)}</div>
+                    <div style="font-size:12px; color:#64748B; margin:2px 0 4px 0;">{escape(user.email or '')}</div>
+                    <div>
+                        <span style="background:#EFF6FF; color:#2563EB; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px;">
+                            <span style="width:5px; height:5px; border-radius:50%; background:#2563EB;"></span>
+                            Lead Editor
+                        </span>
+                    </div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+        st.page_link("pages/3_Settings.py", label="Personal Settings", icon="👤")
+        st.page_link("pages/1_Team_Workspace.py", label="Team Workspace", icon="👥")
+        st.divider()
+        if st.button("🚪 Sign out", key="popover_signout_btn", use_container_width=True):
+            logout()
+            st.switch_page("pages/0_Login.py")
 
-    with nav_col_bell:
-        with st.popover("🔔", use_container_width=True):
-            st.markdown("**Notifications**")
-            st.caption("No new unread system notifications.")
-
-    with nav_col_gear:
-        with st.popover("🎛️", use_container_width=True):
-            st.markdown("**Display Settings**")
-            st.caption("Rendering: Hardware Acceleration (DirectX/Metal)")
-            st.caption("Canvas Target: 60 FPS")
-
-    with nav_col_user:
-        with st.popover(label=f"{user_initials}", use_container_width=True):
-            if avatar_data_uri:
-                avatar_html = f'<img src="{avatar_data_uri}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid #E2E8F0;" />'
-            else:
-                avatar_html = f'<div style="width:44px; height:44px; border-radius:50%; background:#1C274C; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; flex-shrink:0;">{user_initials}</div>'
-
-            st.markdown(
-                f"""
-                <div style="display:flex; align-items:center; gap:12px; padding:4px 0 10px 0;">
-                    {avatar_html}
-                    <div>
-                        <div style="font-weight:700; font-size:15px; color:#111827; line-height:1.2;">{escape(user_display_name)}</div>
-                        <div style="font-size:12px; color:#64748B; margin:2px 0 4px 0;">{escape(user.email or '')}</div>
-                        <div>
-                            <span style="background:#EFF6FF; color:#2563EB; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px;">
-                                <span style="width:5px; height:5px; border-radius:50%; background:#2563EB;"></span>
-                                Lead Editor
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.page_link("pages/3_Settings.py", label="Personal Settings", icon="👤")
-            st.page_link("pages/1_Team_Workspace.py", label="Team Workspace", icon="👥")
-            st.divider()
-            if st.button("🚪 Sign out", key="popover_signout_btn", use_container_width=True):
-                logout()
-                st.switch_page("pages/0_Login.py")
+st.markdown('<div class="top-nav-divider"></div>', unsafe_allow_html=True)
 
 
 # 7. Modal Dialog Tạo Dự Án Mới
