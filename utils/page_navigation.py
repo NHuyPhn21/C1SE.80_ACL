@@ -24,18 +24,19 @@ def render_page_navigation() -> None:
             min-width: 250px !important;
         }
         [data-testid="stSidebar"] > div:first-child {
-            padding-top: 1.25rem !important;
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
+            padding-top: 0.35rem !important;
+            padding-left: 0.85rem !important;
+            padding-right: 0.85rem !important;
             background-color: #FFFFFF !important;
         }
         [data-testid="stSidebarCollapsedControl"] {
             display: none !important;
         }
         
-        /* Brand Header in Sidebar matching Image 2 */
+        /* Brand Header xích lên phía trên gọn gàng và tinh tế */
         .sidebar-brand-box {
-            padding: 0.5rem 0.5rem 1.75rem 0.5rem;
+            padding: 0.25rem 0.5rem 1rem 0.5rem !important;
+            margin-top: -0.25rem !important;
         }
         .sidebar-brand-logo {
             display: flex;
@@ -43,7 +44,7 @@ def render_page_navigation() -> None:
             gap: 3px;
         }
         .sidebar-brand-title {
-            font-size: 26px;
+            font-size: 25px;
             font-weight: 900;
             color: #1C274C;
             letter-spacing: -0.03em;
@@ -59,26 +60,26 @@ def render_page_navigation() -> None:
         .sidebar-brand-sub {
             font-size: 11px;
             font-weight: 600;
-            color: #6C7275;
-            margin-top: 3px;
+            color: #64748B;
+            margin-top: 2px;
         }
         
-        /* Style native page links in sidebar to match Stitch pills */
+        /* Style native page links in sidebar */
         [data-testid="stSidebar"] div.stPageLink {
-            margin-bottom: 6px;
+            margin-bottom: 4px !important;
         }
         [data-testid="stSidebar"] div.stPageLink a {
             border-radius: 9999px !important;
-            padding: 10px 18px !important;
+            padding: 8px 16px !important;
             font-weight: 600 !important;
-            font-size: 14px !important;
+            font-size: 13.5px !important;
             color: #475569 !important;
             background-color: transparent !important;
             transition: all 0.15s ease !important;
             text-decoration: none !important;
             display: flex !important;
             align-items: center !important;
-            gap: 12px !important;
+            gap: 10px !important;
         }
         [data-testid="stSidebar"] div.stPageLink a p,
         [data-testid="stSidebar"] div.stPageLink a span {
