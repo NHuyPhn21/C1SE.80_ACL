@@ -6,7 +6,12 @@ from sqlalchemy.pool import StaticPool
 
 from backend.database import Base
 from backend.models import Chapter, ComicPage, Project, TextRegion, User
-from services.review_service import save_ocr_and_retranslate
+from services.review_service import (
+    confirm_review_and_translate,
+    flag_page_for_second_review,
+    save_ocr_and_retranslate,
+    save_ocr_draft,
+)
 
 
 class ReviewServiceTests(unittest.TestCase):
@@ -85,6 +90,57 @@ class ReviewServiceTests(unittest.TestCase):
             renderer=lambda **_: self.fail("renderer should not run"),
         )
         self.assertEqual(changed, 0)
+
+    def test_draft_auto_save_persists_without_running_pipeline(self) -> None:
+        changed = save_ocr_draft(
+            self.page_id,
+            {self.first_id: "draft correction"},
+            session_factory=self.session_factory,
+        )
+
+        self.assertEqual(changed, 1)
+        db = self.session_factory()
+        page = db.query(ComicPage).filter_by(id=self.page_id).one()
+        region = db.query(TextRegion).filter_by(id=self.first_id).one()
+        self.assertEqual(page.status, "REVIEW_DRAFT")
+        self.assertEqual(region.original_text, "draft correction")
+        self.assertEqual(region.translated_text, "")
+        db.close()
+
+    def test_confirm_translates_even_when_draft_is_already_saved(self) -> None:
+        calls = []
+
+        changed = confirm_review_and_translate(
+            self.page_id,
+            {self.first_id: "old", self.second_id: "same"},
+            session_factory=self.session_factory,
+            translator=lambda **kwargs: calls.append(("translate", kwargs)) or True,
+            renderer=lambda **kwargs: calls.append(("render", kwargs)) or "page.png",
+        )
+
+        self.assertEqual(changed, 0)
+        self.assertEqual(calls[0], ("translate", {"page_id": self.page_id}))
+        self.assertEqual(
+            calls[1], ("render", {"page_id": self.page_id, "use_lama_api": False})
+        )
+        db = self.session_factory()
+        self.assertEqual(
+            db.query(ComicPage).filter_by(id=self.page_id).one().status,
+            "REVIEWED",
+        )
+        db.close()
+
+    def test_flag_page_for_second_review_updates_status(self) -> None:
+        flag_page_for_second_review(
+            self.page_id, session_factory=self.session_factory
+        )
+
+        db = self.session_factory()
+        self.assertEqual(
+            db.query(ComicPage).filter_by(id=self.page_id).one().status,
+            "NEEDS_REVIEW",
+        )
+        db.close()
 
 
 if __name__ == "__main__":
