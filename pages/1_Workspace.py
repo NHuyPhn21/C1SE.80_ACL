@@ -89,61 +89,103 @@ st.markdown(
         padding-left: 0 !important;
     }
 
-    /* KHỐI TOP NAVBAR RIÊNG BIỆT (Ảnh 1 & 2): Khoảng màu trắng #FFFFFF độc lập, thẳng hàng 38px */
+    /* KHỐI TOP NAVBAR RIÊNG BIỆT (Ảnh 1 & 2): Khoảng màu trắng #FFFFFF độc lập, 100% thẳng hàng 38px */
     div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type {
         background: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
         border-radius: 20px !important;
-        padding: 0.6rem 1.35rem !important;
+        padding: 0.5rem 1.25rem !important;
         box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04) !important;
-        margin-bottom: 2rem !important;
+        margin-bottom: 1.75rem !important;
         overflow: visible !important; /* QUAN TRỌNG: Để mở Popover dropdown không bị che khuất */
     }
     div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type > div {
         overflow: visible !important;
     }
 
-    /* Khóa cứng tất cả các cột trong Top Navbar căn giữa hoàn hảo */
+    /* Đảm bảo toàn bộ hệ thống Flex trong Top Navbar căn giữa hoàn hảo */
     div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stHorizontalBlock"] {
         align-items: center !important;
-        height: 42px !important;
+        min-height: 42px !important;
         margin: 0 !important;
+        gap: 0.65rem !important;
     }
     div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"] {
         display: flex !important;
-        align-items: center !important;
-        height: 42px !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: stretch !important;
+        min-height: 42px !important;
         margin: 0 !important;
-        padding: 0 4px !important;
+        padding: 0 !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"] > div {
-        width: 100% !important;
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: stretch !important;
+        min-height: 42px !important;
+        margin: 0 !important;
+        gap: 0 !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stElementContainer"] {
         display: flex !important;
         align-items: center !important;
+        min-height: 38px !important;
+        height: 38px !important;
         margin: 0 !important;
+        padding: 0 !important;
     }
 
-    /* 1. Breadcrumb: Chiều cao chuẩn 38px */
+    /* Căn chỉnh theo từng cột */
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(1) [data-testid="stElementContainer"] {
+        justify-content: flex-start !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(2) [data-testid="stElementContainer"] {
+        justify-content: stretch !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(3) [data-testid="stElementContainer"] {
+        justify-content: flex-end !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stElementContainer"] {
+        justify-content: center !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stElementContainer"] {
+        justify-content: center !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stElementContainer"] {
+        justify-content: flex-end !important;
+    }
+
+    /* 1. Breadcrumb: Chữ to rõ ràng, cân đối thẩm mỹ (Khắc phục phản ánh chữ bị nhỏ) */
     .top-breadcrumb-box {
         display: inline-flex !important;
         align-items: center !important;
-        gap: 6px !important;
-        font-size: 0.95rem !important;
+        gap: 8px !important;
         height: 38px !important;
         line-height: 38px !important;
         white-space: nowrap !important;
         margin: 0 !important;
+        padding: 0 !important;
     }
     .top-breadcrumb-bold {
-        font-weight: 800;
-        color: #1A1D1F;
+        font-weight: 800 !important;
+        font-size: 1.15rem !important; /* ~18.5px: rõ ràng, bề thế */
+        color: #1C274C !important;
+        letter-spacing: -0.02em !important;
     }
     .top-breadcrumb-slash {
-        color: #94A3B8;
+        font-size: 1.15rem !important;
+        color: #CBD5E1 !important;
+        font-weight: 400 !important;
+        margin: 0 1px !important;
+        user-select: none !important;
     }
     .top-breadcrumb-current {
-        color: #64748B;
-        font-weight: 500;
+        font-size: 1.05rem !important; /* ~17px: cân đối */
+        color: #475569 !important;
+        font-weight: 600 !important;
+        letter-spacing: -0.01em !important;
     }
     
     /* 2. Search Bar: Chiều cao chuẩn 38px, bo tròn pill */
@@ -152,12 +194,23 @@ st.markdown(
         padding: 0 !important;
         width: 100% !important;
     }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stWidgetLabel"] {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
     div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stTextInputRootElement"] {
         height: 38px !important;
         min-height: 38px !important;
+        max-height: 38px !important;
         border-radius: 9999px !important;
         border: 1px solid #E2E8F0 !important;
-        background-color: #F1F5F9 !important;
+        background-color: #F8FAFC !important;
+        display: flex !important;
+        align-items: center !important;
+        box-sizing: border-box !important;
     }
     div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type div[data-testid="stTextInputRootElement"] input {
         height: 36px !important;
@@ -165,7 +218,7 @@ st.markdown(
         background-color: transparent !important;
         border: none !important;
         padding: 0 16px !important;
-        font-size: 0.85rem !important;
+        font-size: 0.88rem !important;
         color: #334155 !important;
         box-sizing: border-box !important;
     }
@@ -178,19 +231,22 @@ st.markdown(
     /* 3. Node status badge: Chiều cao chuẩn 38px */
     .node-status-ready {
         height: 38px !important;
+        min-height: 38px !important;
+        max-height: 38px !important;
         display: inline-flex !important;
         align-items: center !important;
-        gap: 6px !important;
+        gap: 7px !important;
         background: #EFF6FF !important;
         color: #1E40AF !important;
         border: 1px solid #DBEAFE !important;
         border-radius: 9999px !important;
         padding: 0 14px !important;
-        font-size: 0.78rem !important;
+        font-size: 0.82rem !important;
         font-weight: 700 !important;
         white-space: nowrap !important;
         box-sizing: border-box !important;
         margin: 0 !important;
+        line-height: 36px !important;
     }
 
     /* 4. Popover Buttons chung trong Topbar (Chuông, Slider, Avatar Capsule): Chiều cao chuẩn 38px */
@@ -199,55 +255,76 @@ st.markdown(
         padding: 0 !important;
         display: inline-flex !important;
         align-items: center !important;
+        justify-content: center !important;
         width: auto !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stPopover"] button,
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stPopoverButton"] {
+
+    /* Nút icon tròn (Cột 4: Chuông & Cột 5: Settings): Tròn 38x38 chuẩn, ẩn chevron */
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopoverButton"],
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopoverButton"] {
+        width: 38px !important;
+        min-width: 38px !important;
+        max-width: 38px !important;
         height: 38px !important;
         min-height: 38px !important;
         max-height: 38px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        box-sizing: border-box !important;
-        cursor: pointer !important;
-        transition: all 0.15s ease !important;
-    }
-
-    /* Nút icon tròn (Chuông & Slider) */
-    .icon-popover-circle [data-testid="stPopover"] button,
-    .icon-popover-circle [data-testid="stPopoverButton"] {
-        width: 38px !important;
-        min-width: 38px !important;
         border-radius: 50% !important;
         background-color: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
         padding: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+        cursor: pointer !important;
+        transition: all 0.15s ease !important;
     }
-    .icon-popover-circle [data-testid="stPopover"] button:hover {
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button:hover,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button:hover {
         background-color: #F8FAFC !important;
         border-color: #CBD5E1 !important;
+        transform: translateY(-1px);
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button svg,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button svg {
+        display: none !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(4) [data-testid="stPopover"] button p,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(5) [data-testid="stPopover"] button p {
+        margin: 0 !important;
+        padding: 0 !important;
+        font-size: 16px !important;
+        line-height: 1 !important;
     }
 
-    /* Nút Capsule Avatar [ (PH) ⌵ ] (Khắc phục lỗi ô xám ở Ảnh 1) */
-    .avatar-popover-capsule [data-testid="stPopover"] button,
-    .avatar-popover-capsule [data-testid="stPopoverButton"] {
+    /* Nút Capsule Avatar (Cột 6) [ (PH) ⌵ ] */
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopoverButton"] {
+        height: 38px !important;
+        min-height: 38px !important;
+        max-height: 38px !important;
         background-color: #FFFFFF !important;
         border: 1.5px solid #1C274C !important;
         border-radius: 9999px !important;
-        padding: 2px 10px 2px 3px !important;
+        padding: 3px 8px 3px 4px !important;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
-        gap: 6px !important;
+        gap: 4px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        transition: all 0.15s ease !important;
     }
-    .avatar-popover-capsule [data-testid="stPopover"] button:hover {
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button:hover {
         background-color: #F8FAFC !important;
         border-color: #0F172A !important;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
     }
-    .avatar-popover-capsule [data-testid="stPopover"] button p,
-    .avatar-popover-capsule [data-testid="stPopover"] button span,
-    .avatar-popover-capsule [data-testid="stPopover"] button [data-testid="stMarkdownContainer"] p {
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button p,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button span,
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button [data-testid="stMarkdownContainer"] p {
         background-color: #1C274C !important;
         color: #FFFFFF !important;
         font-weight: 800 !important;
@@ -264,7 +341,7 @@ st.markdown(
         padding: 0 !important;
         line-height: 28px !important;
     }
-    .avatar-popover-capsule [data-testid="stPopover"] button svg {
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:nth-child(6) [data-testid="stPopover"] button svg {
         color: #1C274C !important;
         fill: #1C274C !important;
         width: 14px !important;
@@ -555,7 +632,7 @@ st.markdown(
 # 6. KHỐI TOP NAVBAR RIÊNG BIỆT (Khóa cứng 1 khối, 100% thẳng hàng 38px, tương tác click mượt mà)
 with st.container(border=True):
     nav_col_left, nav_col_search, nav_col_node, nav_col_bell, nav_col_gear, nav_col_user = st.columns(
-        [2.3, 3.2, 2.2, 0.45, 0.45, 0.9], vertical_alignment="center"
+        [2.1, 3.2, 2.4, 0.42, 0.42, 0.85], vertical_alignment="center"
     )
 
     with nav_col_left:
@@ -590,22 +667,17 @@ with st.container(border=True):
         )
 
     with nav_col_bell:
-        st.markdown('<div class="icon-popover-circle">', unsafe_allow_html=True)
         with st.popover("🔔", use_container_width=True):
             st.markdown("**Notifications**")
             st.caption("No new unread system notifications.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with nav_col_gear:
-        st.markdown('<div class="icon-popover-circle">', unsafe_allow_html=True)
         with st.popover("🎛️", use_container_width=True):
             st.markdown("**Display Settings**")
             st.caption("Rendering: Hardware Acceleration (DirectX/Metal)")
             st.caption("Canvas Target: 60 FPS")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with nav_col_user:
-        st.markdown('<div class="avatar-popover-capsule">', unsafe_allow_html=True)
         with st.popover(label=f"{user_initials}", use_container_width=True):
             if avatar_data_uri:
                 avatar_html = f'<img src="{avatar_data_uri}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid #E2E8F0;" />'
@@ -636,7 +708,6 @@ with st.container(border=True):
             if st.button("🚪 Sign out", key="popover_signout_btn", use_container_width=True):
                 logout()
                 st.switch_page("pages/0_Login.py")
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # 7. Modal Dialog Tạo Dự Án Mới

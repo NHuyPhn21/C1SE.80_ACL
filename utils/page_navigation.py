@@ -23,8 +23,21 @@ def render_page_navigation() -> None:
             width: 250px !important;
             min-width: 250px !important;
         }
+        
+        /* Ẩn header mặc định và thu gọn đỉnh để nâng logo lên ngang bằng Top Navbar */
+        [data-testid="stSidebarHeader"] {
+            display: none !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        [data-testid="stSidebarUserContent"] {
+            padding-top: 0 !important;
+            margin-top: 0 !important;
+        }
         [data-testid="stSidebar"] > div:first-child {
-            padding-top: 0.35rem !important;
+            padding-top: 0.75rem !important;
             padding-left: 0.85rem !important;
             padding-right: 0.85rem !important;
             background-color: #FFFFFF !important;
@@ -33,10 +46,11 @@ def render_page_navigation() -> None:
             display: none !important;
         }
         
-        /* Brand Header xích lên phía trên gọn gàng và tinh tế */
+        /* Brand Header xích lên ngang bằng thanh Topbar */
         .sidebar-brand-box {
-            padding: 0.25rem 0.5rem 1rem 0.5rem !important;
-            margin-top: -0.25rem !important;
+            padding: 0.1rem 0.5rem 0.85rem 0.5rem !important;
+            margin-top: 0 !important;
+            margin-bottom: 0.2rem !important;
         }
         .sidebar-brand-logo {
             display: flex;
