@@ -3,6 +3,7 @@
 from pathlib import Path
 import streamlit as st
 
+from services.workspace_service import WorkspaceService
 from utils.auth_session import require_auth
 from backend.image_utils import BASE_DIR
 from utils.page_navigation import render_page_navigation
@@ -10,7 +11,15 @@ from utils.page_navigation import render_page_navigation
 user = require_auth()
 render_page_navigation()
 
-project_name = st.query_params.get("project", "Shonen Weekly #112")
+workspace_service = WorkspaceService()
+user_projects = []
+try:
+    user_projects = workspace_service.list_projects(int(user.id))
+except Exception:
+    pass
+
+default_proj = user_projects[0].title if user_projects else "Local Manga"
+project_name = st.query_params.get("project", default_proj)
 uploads_dir = BASE_DIR / "data" / "raw_images" / "uploads"
 uploads_dir.mkdir(parents=True, exist_ok=True)
 
@@ -190,7 +199,7 @@ st.markdown(
     f"""
     <div class="top-breadcrumb">
         <div>ACL Studio &nbsp;/&nbsp; Projects &nbsp;/&nbsp; {project_name} &nbsp;/&nbsp; <span>Chapter Studio</span></div>
-        <div class="node-status"><span class="node-dot"></span> Node Tokyo-01 (GPU idle)</div>
+        <div class="node-status"><span class="node-dot"></span> Local Worker Daemon (Ready)</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -319,5 +328,6 @@ with c_bar_btn:
                 "step_name": "Đang chờ Queue Monitor...",
                 "error_msg": "",
             }
+            st.query_params["project"] = project_name
             st.switch_page("pages/5_Queue_Monitor.py")
     st.markdown("</div>", unsafe_allow_html=True)
