@@ -1,4 +1,4 @@
-"""Dynamic project Workspace backed by SQLite (100% Streamlit Native, Google Stitch UX/UI Design)."""
+"""Dynamic project Workspace backed by SQLite (100% Streamlit Native, 100% Matching Stitch UI)."""
 
 from html import escape
 import os
@@ -53,47 +53,32 @@ try:
 except Exception:
     in_queue_count = 0
 
-# 4. CSS cục bộ chuyên nghiệp (Khối Top Navbar riêng biệt & Sidebar Deep Navy đồng bộ Login)
+# 4. CSS cục bộ chuyên nghiệp (Khôi phục 100% Giao diện cũ theo Ảnh 2)
 st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     
-    /* Đồng bộ màu nền canvas giống phần đăng nhập (#f7faf5) */
     html, body, [data-testid="stAppViewContainer"] {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-        background-color: #F7FAF5 !important;
+        background-color: #F8F9FA !important;
         color: #1A1D1F !important;
     }
     
     [data-testid="stMainBlockContainer"] {
-        padding: 1.25rem 2.5rem 3.5rem 2.5rem !important;
+        padding: 0.75rem 2.5rem 3rem 2.5rem !important;
         max-width: 1400px !important;
     }
 
-    /* Active Sidebar Pill: Nổi bật hoàn toàn trên nền Navy #25326F (White Pill + Dark Navy text) */
-    [data-testid="stSidebar"] a[href*="Workspace"]:not([href*="Team"]) {
-        background-color: #FFFFFF !important;
-        color: #25326F !important;
-        font-weight: 800 !important;
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28) !important;
+    /* Top Navbar Row: Phẳng, Tinh tế, không bọc khung hộp dày */
+    .top-nav-bar-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0 1rem 0;
+        border-bottom: 1px solid #EAEAEA;
+        margin-bottom: 1.5rem;
     }
-    [data-testid="stSidebar"] a[href*="Workspace"]:not([href*="Team"]) p,
-    [data-testid="stSidebar"] a[href*="Workspace"]:not([href*="Team"]) span {
-        color: #25326F !important;
-        font-weight: 800 !important;
-    }
-
-    /* KHỐI TOP NAVBAR RIÊNG BIỆT (Card Container nổi bật độc lập) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type {
-        background: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
-        border-radius: 20px !important;
-        padding: 0.65rem 1.4rem !important;
-        box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05) !important;
-        margin-bottom: 2.25rem !important;
-    }
-
     .top-breadcrumb-box {
         display: flex;
         align-items: center;
@@ -131,64 +116,43 @@ st.markdown(
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        background: #ECFDF5;
-        color: #047857;
-        border: 1px solid #A7F3D0;
+        background: #EFF6FF;
+        color: #1E40AF;
+        border: 1px solid #DBEAFE;
         border-radius: 9999px;
-        padding: 6px 14px;
-        font-size: 0.8rem;
+        padding: 5px 14px;
+        font-size: 0.78rem;
         font-weight: 700;
         white-space: nowrap;
     }
 
-    /* Popover Button (Phần Logo Login / Logout bắt mắt đúng kỹ thuật) */
+    /* Popover button in Top Bar (Avatar circle PH with dropdown arrow) */
     .top-avatar-popover div[data-testid="stPopover"] > button {
-        background: linear-gradient(135deg, #1C274C 0%, #2563EB 100%) !important;
+        background-color: #1C274C !important;
         color: #FFFFFF !important;
         border-radius: 9999px !important;
         border: none !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
         font-size: 0.85rem !important;
-        padding: 6px 16px !important;
-        box-shadow: 0 3px 12px rgba(37, 99, 235, 0.25) !important;
+        padding: 5px 14px !important;
+        box-shadow: 0 2px 6px rgba(28, 39, 76, 0.15) !important;
         display: flex !important;
         align-items: center !important;
-        justify-content: center !important;
         gap: 6px !important;
-        transition: all 0.2s ease !important;
     }
     .top-avatar-popover div[data-testid="stPopover"] > button:hover {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 6px 18px rgba(37, 99, 235, 0.38) !important;
+        background-color: #0F172A !important;
     }
     .top-avatar-popover div[data-testid="stPopover"] > button p {
         color: #FFFFFF !important;
-        font-weight: 700 !important;
-    }
-
-    /* Nút Đăng Xuất Đỏ Nổi Bật Bên Trong Popover */
-    .logout-btn-box div[data-testid="stButton"] > button {
-        background-color: #FEF2F2 !important;
-        border: 1px solid #FCA5A5 !important;
-        color: #DC2626 !important;
-        border-radius: 9999px !important;
-        font-weight: 700 !important;
-        font-size: 0.85rem !important;
-        padding: 8px 16px !important;
-        transition: all 0.15s ease !important;
-    }
-    .logout-btn-box div[data-testid="stButton"] > button:hover {
-        background-color: #DC2626 !important;
-        color: #FFFFFF !important;
-        border-color: #DC2626 !important;
-        box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3) !important;
+        font-weight: 800 !important;
     }
 
     /* Main Page Header */
     .main-page-title {
-        font-size: 2.1rem;
+        font-size: 2.15rem;
         font-weight: 800;
-        color: #1A1D1F;
+        color: #111827;
         margin: 0;
         letter-spacing: -0.03em;
     }
@@ -196,10 +160,10 @@ st.markdown(
         color: #64748B;
         font-size: 0.95rem;
         margin-top: 4px;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.75rem;
     }
 
-    /* + Create New Project button (Navy Pill) */
+    /* + Create New Project button (Navy Pill 100% chuẩn Ảnh 2) */
     .create-project-btn-wrap div[data-testid="stButton"] > button {
         background-color: #1C274C !important;
         color: #FFFFFF !important;
@@ -207,20 +171,20 @@ st.markdown(
         border-radius: 9999px !important;
         font-weight: 700 !important;
         font-size: 0.9rem !important;
-        padding: 0.65rem 1.4rem !important;
-        box-shadow: 0 4px 14px rgba(28, 39, 76, 0.2) !important;
+        padding: 0.65rem 1.45rem !important;
+        box-shadow: 0 4px 14px rgba(28, 39, 76, 0.22) !important;
         transition: all 0.2s ease !important;
     }
     .create-project-btn-wrap div[data-testid="stButton"] > button:hover {
         background-color: #0F172A !important;
         transform: translateY(-1px) !important;
-        box-shadow: 0 6px 18px rgba(28, 39, 76, 0.3) !important;
+        box-shadow: 0 6px 18px rgba(28, 39, 76, 0.35) !important;
     }
 
     /* Clean Project Card (Exact Image 2) */
     .clean-project-card {
         background: #FFFFFF;
-        border: 1px solid #E2E8F0;
+        border: 1px solid #E5E7EB;
         border-radius: 16px;
         padding: 1.35rem 1.45rem 1.15rem 1.45rem;
         box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
@@ -335,33 +299,11 @@ st.markdown(
         border-color: #1C274C !important;
     }
 
-    /* Dashed New Card */
-    .dashed-new-card {
-        border: 2px dashed #CBD5E1;
-        background: #FAFAFA;
-        border-radius: 16px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 230px;
-        padding: 1.5rem;
-        text-align: center;
-        color: #64748B;
-        transition: all 0.2s ease;
-        margin-bottom: 0.5rem;
-    }
-    .dashed-new-card:hover {
-        border-color: #2563EB;
-        background: #EFF6FF;
-        color: #2563EB;
-    }
-
     /* 3 Summary Metric Cards at Bottom (Image 2) */
     .metric-row-wrap {
-        margin-top: 3.5rem;
+        margin-top: 4rem;
         padding-top: 1.5rem;
-        border-top: 1px solid #E2E8F0;
+        border-top: 1px solid #EAEAEA;
     }
     .bottom-metric-card {
         background: #FFFFFF;
@@ -407,80 +349,87 @@ st.markdown(
         justify-content: center;
         font-size: 20px;
     }
+
+    /* Modal dialog button */
+    div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"] > button {
+        background-color: #1C274C !important;
+        color: #FFFFFF !important;
+        border-radius: 9999px !important;
+        font-weight: 700 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# 5. KHỐI TOP NAVBAR RIÊNG BIỆT (Bordered Card Container chuẩn khối độc lập)
-with st.container(border=True):
-    nav_col_left, nav_col_search, nav_col_node, nav_col_user = st.columns(
-        [2.6, 3.2, 2.2, 1.6], vertical_alignment="center"
+# 5. Top Navbar (Chuẩn xác 100% theo Ảnh 2 của bạn)
+nav_col_left, nav_col_search, nav_col_node, nav_col_user = st.columns(
+    [2.6, 3.2, 2.2, 1.4], vertical_alignment="center"
+)
+
+with nav_col_left:
+    st.markdown(
+        """
+        <div class="top-breadcrumb-box">
+            <span class="top-breadcrumb-bold">ACL Studio</span>
+            <span class="top-breadcrumb-slash">/</span>
+            <span class="top-breadcrumb-current">Projects</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    with nav_col_left:
-        st.markdown(
-            """
-            <div class="top-breadcrumb-box">
-                <span class="top-breadcrumb-bold">ACL Studio</span>
-                <span class="top-breadcrumb-slash">/</span>
-                <span class="top-breadcrumb-current">Projects</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+with nav_col_search:
+    st.markdown('<div class="top-search-wrapper">', unsafe_allow_html=True)
+    search_keyword = st.text_input(
+        "Search batches or series",
+        placeholder="🔍 Filter batches or series...",
+        label_visibility="collapsed",
+        key="top_navbar_search_input",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    with nav_col_search:
-        st.markdown('<div class="top-search-wrapper">', unsafe_allow_html=True)
-        search_keyword = st.text_input(
-            "Search batches or series",
-            placeholder="🔍 Filter batches or series...",
-            label_visibility="collapsed",
-            key="top_navbar_search_input",
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+with nav_col_node:
+    st.markdown(
+        f"""
+        <div class="node-status-ready">
+            <span>⚙</span>
+            <span>Node: {hostname} (Ready)</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with nav_col_node:
+with nav_col_user:
+    st.markdown('<div class="top-avatar-popover">', unsafe_allow_html=True)
+    with st.popover(f"👤 {user_initials} ▾", use_container_width=True):
         st.markdown(
             f"""
-            <div class="node-status-ready">
-                <span>⚙</span>
-                <span>Node: {hostname} (Ready)</span>
+            <div style="display:flex; align-items:center; gap:12px; padding:4px 0 8px 0;">
+                <div style="width:40px; height:40px; border-radius:50%; background:#1C274C; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px;">
+                    {user_initials}
+                </div>
+                <div>
+                    <div style="font-weight:800; font-size:14px; color:#1A1D1F;">{escape(user_display_name)}</div>
+                    <div style="font-size:11px; color:#64748B;">{escape(user.email or '')}</div>
+                </div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <span style="background:#E0E7FF; color:#3730A3; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px;">
+                    👑 {escape(user.role or 'Owner').upper()}
+                </span>
             </div>
             """,
             unsafe_allow_html=True,
         )
+        st.page_link("pages/3_Settings.py", label="Cài đặt tài khoản", icon="⚙️")
+        st.divider()
+        if st.button("🚪 Đăng xuất", key="popover_logout_btn", use_container_width=True):
+            logout()
+            st.switch_page("pages/0_Login.py")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    with nav_col_user:
-        st.markdown('<div class="top-avatar-popover">', unsafe_allow_html=True)
-        with st.popover(f"👤 {user_initials} • {user_display_name.split()[-1]}", use_container_width=True):
-            st.markdown(
-                f"""
-                <div style="display:flex; align-items:center; gap:12px; padding:4px 0 8px 0;">
-                    <div style="width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg, #1C274C, #2563EB); color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px;">
-                        {user_initials}
-                    </div>
-                    <div>
-                        <div style="font-weight:800; font-size:14px; color:#1A1D1F;">{escape(user_display_name)}</div>
-                        <div style="font-size:11px; color:#64748B;">{escape(user.email or '')}</div>
-                    </div>
-                </div>
-                <div style="margin-bottom:12px;">
-                    <span style="background:#E0E7FF; color:#3730A3; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px;">
-                        👑 {escape(user.role or 'Owner').upper()}
-                    </span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.page_link("pages/3_Settings.py", label="Cài đặt tài khoản", icon="⚙️")
-            st.divider()
-            st.markdown('<div class="logout-btn-box">', unsafe_allow_html=True)
-            if st.button("🚪 Đăng xuất an toàn", key="popover_logout_btn", use_container_width=True):
-                logout()
-                st.switch_page("pages/0_Login.py")
-            st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+st.markdown('<div style="height: 1.5rem; border-bottom: 1px solid #EAEAEA; margin-bottom: 1.75rem;"></div>', unsafe_allow_html=True)
 
 
 # 6. Modal Dialog Tạo Dự Án Mới
@@ -508,8 +457,8 @@ def create_project_dialog() -> None:
             st.error(f"Lỗi khởi tạo: {exc}")
 
 
-# 7. Tiêu đề Trang & Nút Tạo Dự Án Chuẩn Ảnh 2
-head_left, head_right = st.columns([3.8, 1.4], vertical_alignment="center")
+# 7. Tiêu đề Trang & Nút Tạo Dự Án (Navy Pill Chuẩn Ảnh 2)
+head_left, head_right = st.columns([3.8, 1.3], vertical_alignment="center")
 with head_left:
     st.markdown('<h1 class="main-page-title">Projects</h1>', unsafe_allow_html=True)
     st.markdown(
@@ -530,7 +479,7 @@ if search_keyword.strip():
     kw = search_keyword.strip().lower()
     display_projects = [p for p in display_projects if kw in p.title.lower() or kw in p.description.lower()]
 
-# 9. Lưới Thẻ Truyện (Exact Project Cards từ Ảnh 2)
+# 9. Lưới Thẻ Truyện (Exact Project Cards từ Ảnh 2, Không có thẻ dashed thừa)
 if not display_projects:
     st.info("Không tìm thấy bộ truyện nào phù hợp với bộ lọc hiện tại.")
     if st.button("Khởi tạo bộ truyện ngay", key="btn_empty_create"):
@@ -580,25 +529,6 @@ else:
                     st.query_params["project_id"] = str(project.id)
                     st.query_params["project"] = project.title
                     st.switch_page("pages/2_Chapter_Studio.py")
-                st.markdown("</div>", unsafe_allow_html=True)
-
-        # Thẻ dashed nếu còn ô trống trong hàng
-        if len(row_projects) < 3:
-            remaining_col = columns[len(row_projects)]
-            with remaining_col:
-                st.markdown(
-                    """
-                    <div class="dashed-new-card">
-                        <div style="font-size:28px; margin-bottom:8px;">➕</div>
-                        <div style="font-weight:700; font-size:1rem; margin-bottom:4px;">Khởi Tạo Bộ Truyện Mới</div>
-                        <div style="font-size:0.8rem; color:#64748B;">Tải lên tập raw manga mới để chạy pipeline AI</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.markdown('<div class="card-action-btn">', unsafe_allow_html=True)
-                if st.button("Tạo Dự Án Nhanh", key=f"quick_create_btn_{start}", use_container_width=True):
-                    create_project_dialog()
                 st.markdown("</div>", unsafe_allow_html=True)
 
 # 10. Hàng 3 Thẻ Metric Thống Kê ở Dưới Cùng (Chuẩn xác 100% theo Ảnh 2)
