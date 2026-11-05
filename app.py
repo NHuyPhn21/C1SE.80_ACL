@@ -13,7 +13,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        #MainMenu, header, footer, [data-testid="stToolbar"],
+        #MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"],
         [data-testid="stDecoration"], [data-testid="stStatusWidget"] {
             display: none !important;
         }
