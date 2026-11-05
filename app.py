@@ -45,6 +45,11 @@ st.markdown(
 pages = [
     st.Page("pages/0_Login.py", title="Log in", url_path="login", default=True),
     st.Page("pages/0_Register.py", title="Register", url_path="register"),
+    st.Page(
+        "pages/0_Forgot_Password.py",
+        title="Reset password",
+        url_path="forgot-password",
+    ),
     st.Page("pages/1_Workspace.py", title="Workspace", url_path="workspace"),
     st.Page("pages/1_Team_Workspace.py", title="Team Roles", url_path="team-roles"),
     st.Page("pages/2_Chapter_Studio.py", title="Chapter Studio", url_path="chapter-studio"),
