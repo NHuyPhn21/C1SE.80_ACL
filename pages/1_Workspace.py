@@ -64,7 +64,7 @@ for ext in (".png", ".jpg", ".jpeg"):
         avatar_data_uri = f"data:{mime};base64,{b64}"
         break
 
-# 5. CSS cục bộ chuyên nghiệp (Khôi phục 100% Giao diện cũ theo Ảnh 2)
+# 5. CSS cục bộ chuyên nghiệp (Khôi phục 100% Giao diện chuẩn, Khối Topbar độc lập, Đồng đều thẳng hàng)
 st.markdown(
     """
     <style>
@@ -77,16 +77,44 @@ st.markdown(
     }
     
     [data-testid="stMainBlockContainer"] {
-        padding: 0.75rem 2.5rem 3rem 2.5rem !important;
+        padding: 1rem 2.5rem 3.5rem 2.5rem !important;
         max-width: 1400px !important;
     }
 
-    /* Top Navbar Row: Phẳng, Tinh tế, không bọc khung hộp dày */
+    /* KHỐI TOP NAVBAR RIÊNG BIỆT: Nổi bật trên nền canvas, viền bo tròn, shadow mềm */
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type {
+        background: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 20px !important;
+        padding: 0.65rem 1.4rem !important;
+        box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04) !important;
+        margin-bottom: 2.25rem !important;
+    }
+
+    /* Đảm bảo tất cả các cột trong Top Navbar căn giữa hoàn hảo */
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stHorizontalBlock"] {
+        align-items: center !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"] {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:first-child {
+        justify-content: flex-start !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type [data-testid="stColumn"]:last-child {
+        justify-content: flex-end !important;
+    }
+
+    /* 1. Breadcrumb: Chiều cao chuẩn 38px */
     .top-breadcrumb-box {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.95rem;
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        font-size: 0.95rem !important;
+        height: 38px !important;
+        white-space: nowrap !important;
     }
     .top-breadcrumb-bold {
         font-weight: 800;
@@ -100,14 +128,27 @@ st.markdown(
         font-weight: 500;
     }
     
-    /* Search Bar in Top Bar */
+    /* 2. Search Bar: Chiều cao chuẩn 38px, bo tròn pill */
+    .top-search-wrapper {
+        width: 100% !important;
+    }
+    .top-search-wrapper div[data-testid="stTextInput"] {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .top-search-wrapper div[data-testid="stTextInputRootElement"] {
+        height: 38px !important;
+        border-radius: 9999px !important;
+    }
     .top-search-wrapper div[data-testid="stTextInputRootElement"] input {
+        height: 38px !important;
         background-color: #F1F5F9 !important;
         border: 1px solid #E2E8F0 !important;
         border-radius: 9999px !important;
-        padding: 6px 18px !important;
+        padding: 0 18px !important;
         font-size: 0.85rem !important;
         color: #334155 !important;
+        box-sizing: border-box !important;
     }
     .top-search-wrapper div[data-testid="stTextInputRootElement"] input:focus {
         border-color: #2563EB !important;
@@ -115,67 +156,98 @@ st.markdown(
         box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
     }
 
+    /* 3. Node status badge: Chiều cao chuẩn 38px */
     .node-status-ready {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: #EFF6FF;
-        color: #1E40AF;
-        border: 1px solid #DBEAFE;
-        border-radius: 9999px;
-        padding: 5px 14px;
-        font-size: 0.78rem;
-        font-weight: 700;
-        white-space: nowrap;
+        height: 38px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        background: #EFF6FF !important;
+        color: #1E40AF !important;
+        border: 1px solid #DBEAFE !important;
+        border-radius: 9999px !important;
+        padding: 0 14px !important;
+        font-size: 0.78rem !important;
+        font-weight: 700 !important;
+        white-space: nowrap !important;
+        box-sizing: border-box !important;
     }
 
+    /* 4. Icon Circles (Bell & Slider): Chiều cao chuẩn 38px */
+    .top-nav-icons-wrap {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        height: 38px !important;
+    }
     .icon-box-circle {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-        font-size: 14px;
-        cursor: pointer;
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: relative !important;
+        font-size: 14px !important;
+        box-sizing: border-box !important;
+        cursor: pointer !important;
+        transition: all 0.15s ease !important;
+    }
+    .icon-box-circle:hover {
+        background-color: #F8FAFC !important;
+        border-color: #CBD5E1 !important;
     }
     .icon-red-dot {
         position: absolute;
-        top: 5px;
-        right: 5px;
+        top: 6px;
+        right: 6px;
         width: 6px;
         height: 6px;
         border-radius: 50%;
         background-color: #EF4444;
     }
 
-    /* Popover Trigger Capsule Button matching Image 2 [ (PH) ⌵ ] */
+    /* 5. Nút Kích Hoạt Avatar Capsule [ (PH) ⌵ ]: Chuẩn 100% Ảnh Mockup */
     .top-avatar-popover {
-        display: flex;
-        justify-content: flex-end;
+        display: flex !important;
+        justify-content: flex-end !important;
+        align-items: center !important;
+        height: 38px !important;
     }
-    .top-avatar-popover div[data-testid="stPopover"] > button {
+    .top-avatar-popover div[data-testid="stPopover"] {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .top-avatar-popover [data-testid="stPopover"] button,
+    .top-avatar-popover div[data-testid="stPopover"] button,
+    div[data-testid="stPopoverButton"] {
         background-color: #FFFFFF !important;
-        border: 1.5px solid #111827 !important;
+        border: 1.5px solid #1C274C !important;
         border-radius: 9999px !important;
-        padding: 3px 8px 3px 3px !important;
+        padding: 2px 10px 2px 4px !important;
         height: 38px !important;
         min-height: 38px !important;
+        max-height: 38px !important;
         display: inline-flex !important;
         align-items: center !important;
+        justify-content: center !important;
         gap: 6px !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+        box-sizing: border-box !important;
+        cursor: pointer !important;
         transition: all 0.15s ease !important;
     }
-    .top-avatar-popover div[data-testid="stPopover"] > button:hover {
+    .top-avatar-popover [data-testid="stPopover"] button:hover {
         background-color: #F8FAFC !important;
-        border-color: #000000 !important;
+        border-color: #0F172A !important;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
     }
-    .top-avatar-popover div[data-testid="stPopover"] > button > div p {
+    /* Logo avatar tròn xanh đen bên trong nút capsule */
+    .top-avatar-popover [data-testid="stPopover"] button p,
+    .top-avatar-popover [data-testid="stPopover"] button span,
+    .top-avatar-popover [data-testid="stPopover"] button [data-testid="stMarkdownContainer"] p {
         background-color: #1C274C !important;
         color: #FFFFFF !important;
         font-weight: 800 !important;
@@ -183,18 +255,23 @@ st.markdown(
         border-radius: 50% !important;
         width: 28px !important;
         height: 28px !important;
+        min-width: 28px !important;
+        min-height: 28px !important;
+        max-width: 28px !important;
+        max-height: 28px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         margin: 0 !important;
-        letter-spacing: -0.02em !important;
+        padding: 0 !important;
+        line-height: 28px !important;
     }
-    .top-avatar-popover div[data-testid="stPopover"] > button svg {
-        color: #111827 !important;
-        fill: #111827 !important;
+    .top-avatar-popover [data-testid="stPopover"] button svg {
+        color: #1C274C !important;
+        fill: #1C274C !important;
         width: 14px !important;
         height: 14px !important;
-        margin-right: 2px !important;
+        margin-left: 2px !important;
     }
 
     /* Popover dropdown container matching Image 2 */
@@ -476,95 +553,94 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 6. Top Navbar (Chuẩn xác 100% theo Ảnh 2: Breadcrumb, Search Pill, Node Badge, Bell, Slider, Capsule Avatar)
-nav_col_left, nav_col_search, nav_col_node, nav_col_icons, nav_col_user = st.columns(
-    [2.3, 3.1, 2.1, 0.9, 0.8], vertical_alignment="center"
-)
-
-with nav_col_left:
-    st.markdown(
-        """
-        <div class="top-breadcrumb-box">
-            <span class="top-breadcrumb-bold">ACL Studio</span>
-            <span class="top-breadcrumb-slash">/</span>
-            <span class="top-breadcrumb-current">Projects</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
+# 6. KHỐI TOP NAVBAR RIÊNG BIỆT (Bordered Card Container chuẩn 1 khối độc lập, các mục thẳng hàng 38px)
+with st.container(border=True):
+    nav_col_left, nav_col_search, nav_col_node, nav_col_icons, nav_col_user = st.columns(
+        [2.2, 3.2, 2.2, 0.9, 0.8], vertical_alignment="center"
     )
 
-with nav_col_search:
-    st.markdown('<div class="top-search-wrapper">', unsafe_allow_html=True)
-    search_keyword = st.text_input(
-        "Search batches or series",
-        placeholder="🔍 Filter batches or series...",
-        label_visibility="collapsed",
-        key="top_navbar_search_input",
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with nav_col_node:
-    st.markdown(
-        f"""
-        <div class="node-status-ready">
-            <span>⚙</span>
-            <span>Node: {hostname} (Ready)</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with nav_col_icons:
-    st.markdown(
-        """
-        <div style="display:flex; align-items:center; gap:8px;">
-            <div class="icon-box-circle">
-                <span>🔔</span>
-                <span class="icon-red-dot"></span>
+    with nav_col_left:
+        st.markdown(
+            """
+            <div class="top-breadcrumb-box">
+                <span class="top-breadcrumb-bold">ACL Studio</span>
+                <span class="top-breadcrumb-slash">/</span>
+                <span class="top-breadcrumb-current">Projects</span>
             </div>
-            <div class="icon-box-circle">
-                <span>🎛️</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
-with nav_col_user:
-    st.markdown('<div class="top-avatar-popover">', unsafe_allow_html=True)
-    with st.popover(label=f"{user_initials}", use_container_width=False):
-        if avatar_data_uri:
-            avatar_html = f'<img src="{avatar_data_uri}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid #E2E8F0;" />'
-        else:
-            avatar_html = f'<div style="width:44px; height:44px; border-radius:50%; background:#1C274C; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; flex-shrink:0;">{user_initials}</div>'
+    with nav_col_search:
+        st.markdown('<div class="top-search-wrapper">', unsafe_allow_html=True)
+        search_keyword = st.text_input(
+            "Search batches or series",
+            placeholder="🔍 Filter batches or series...",
+            label_visibility="collapsed",
+            key="top_navbar_search_input",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
+    with nav_col_node:
         st.markdown(
             f"""
-            <div style="display:flex; align-items:center; gap:12px; padding:4px 0 10px 0;">
-                {avatar_html}
-                <div>
-                    <div style="font-weight:700; font-size:15px; color:#111827; line-height:1.2;">{escape(user_display_name)}</div>
-                    <div style="font-size:12px; color:#64748B; margin:2px 0 4px 0;">{escape(user.email or '')}</div>
-                    <div>
-                        <span style="background:#EFF6FF; color:#2563EB; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px;">
-                            <span style="width:5px; height:5px; border-radius:50%; background:#2563EB;"></span>
-                            Lead Editor
-                        </span>
-                    </div>
+            <div class="node-status-ready">
+                <span>⚙</span>
+                <span>Node: {hostname} (Ready)</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with nav_col_icons:
+        st.markdown(
+            """
+            <div class="top-nav-icons-wrap">
+                <div class="icon-box-circle">
+                    <span>🔔</span>
+                    <span class="icon-red-dot"></span>
+                </div>
+                <div class="icon-box-circle">
+                    <span>🎛️</span>
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        st.page_link("pages/3_Settings.py", label="Personal Settings", icon="👤")
-        st.page_link("pages/1_Team_Workspace.py", label="Team Workspace", icon="👥")
-        st.divider()
-        if st.button("🚪 Sign out", key="popover_signout_btn", use_container_width=True):
-            logout()
-            st.switch_page("pages/0_Login.py")
-    st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown('<div style="height: 1.5rem; border-bottom: 1px solid #EAEAEA; margin-bottom: 1.75rem;"></div>', unsafe_allow_html=True)
+    with nav_col_user:
+        st.markdown('<div class="top-avatar-popover">', unsafe_allow_html=True)
+        with st.popover(label=f"{user_initials}", use_container_width=False):
+            if avatar_data_uri:
+                avatar_html = f'<img src="{avatar_data_uri}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid #E2E8F0;" />'
+            else:
+                avatar_html = f'<div style="width:44px; height:44px; border-radius:50%; background:#1C274C; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; flex-shrink:0;">{user_initials}</div>'
+
+            st.markdown(
+                f"""
+                <div style="display:flex; align-items:center; gap:12px; padding:4px 0 10px 0;">
+                    {avatar_html}
+                    <div>
+                        <div style="font-weight:700; font-size:15px; color:#111827; line-height:1.2;">{escape(user_display_name)}</div>
+                        <div style="font-size:12px; color:#64748B; margin:2px 0 4px 0;">{escape(user.email or '')}</div>
+                        <div>
+                            <span style="background:#EFF6FF; color:#2563EB; font-size:11px; font-weight:700; padding:2px 8px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px;">
+                                <span style="width:5px; height:5px; border-radius:50%; background:#2563EB;"></span>
+                                Lead Editor
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.page_link("pages/3_Settings.py", label="Personal Settings", icon="👤")
+            st.page_link("pages/1_Team_Workspace.py", label="Team Workspace", icon="👥")
+            st.divider()
+            if st.button("🚪 Sign out", key="popover_signout_btn", use_container_width=True):
+                logout()
+                st.switch_page("pages/0_Login.py")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # 7. Modal Dialog Tạo Dự Án Mới
