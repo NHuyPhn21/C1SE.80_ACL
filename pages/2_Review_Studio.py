@@ -10,12 +10,17 @@ import streamlit as st
 
 from utils.auth_session import require_auth
 from backend.database import SessionLocal
-from backend.models import ComicPage, TextRegion
+from backend.models import Chapter, ComicPage, Project, TextRegion
 from backend.image_utils import (
     resolve_project_path,
     _deduplicate_db_regions,
 )
-from services.review_service import ReviewServiceError, save_ocr_and_retranslate
+from services.review_service import (
+    ReviewServiceError,
+    confirm_review_and_translate,
+    flag_page_for_second_review,
+    save_ocr_draft,
+)
 from utils.page_navigation import render_page_navigation
 
 user = require_auth()
@@ -129,12 +134,23 @@ current_page = None
 page_idx = 1
 total_pages = 1
 reviewed_pages = 0
+idx_pos = 0
 
 try:
-    all_pages = db.query(ComicPage).order_by(ComicPage.id.asc()).all()
+    page_query = (
+        db.query(ComicPage)
+        .join(Chapter, ComicPage.chapter_id == Chapter.id)
+        .join(Project, Chapter.project_id == Project.id)
+    )
+    project_pages = (
+        page_query.filter(Project.title == project_name)
+        .order_by(ComicPage.id.asc())
+        .all()
+    )
+    all_pages = project_pages or page_query.order_by(ComicPage.id.asc()).all()
     reviewed_pages = sum(
         1 for page in all_pages
-        if page.status == "COMPLETED" or bool(page.rendered_path)
+        if page.status in {"REVIEWED", "COMPLETED"} or bool(page.rendered_path)
     )
     req_page_id = st.query_params.get("page_id")
     req_page_name = st.query_params.get("page_name")
@@ -210,14 +226,24 @@ with c_nav:
     st.markdown("<div style='padding-top:0.5rem;'>", unsafe_allow_html=True)
     col_p, col_info, col_n = st.columns([1, 1.5, 1])
     with col_p:
-        if st.button("← Prev", key="btn_prev_page", use_container_width=True):
+        if st.button(
+            "← Prev",
+            key="btn_prev_page",
+            use_container_width=True,
+            disabled=not current_page or idx_pos == 0,
+        ):
             if current_page:
                 st.query_params["page_id"] = str(prev_page_id)
                 st.rerun()
     with col_info:
         st.markdown(f"<div style='text-align:center; font-weight:700; padding-top:6px;'>Page {page_idx} of {total_pages}</div>", unsafe_allow_html=True)
     with col_n:
-        if st.button("Next →", key="btn_next_page", use_container_width=True):
+        if st.button(
+            "Next →",
+            key="btn_next_page",
+            use_container_width=True,
+            disabled=not current_page or idx_pos >= total_pages - 1,
+        ):
             if current_page:
                 st.query_params["page_id"] = str(next_page_id)
                 st.rerun()
@@ -232,7 +258,7 @@ if regions_data:
             f"Bubble #{item['index']}" for item in regions_data if item["id"] == region_id
         ),
         horizontal=True,
-        key="selected_review_region",
+        key=f"selected_review_region_{current_page.id if current_page else 0}",
     )
 
 if regions_data and os.path.exists(orig_real_path):
@@ -300,12 +326,12 @@ with col_right:
             rid = item["id"]
             x1, y1, x2, y2 = item["bbox"]
 
-            is_warning = idx == 3  # Mô phỏng card có cảnh báo độ tin cậy thấp như Figma
+            is_warning = not bool(item["original_text"].strip())
             card_class = "bubble-card-warning" if is_warning else "bubble-card"
             if rid == selected_region_id:
                 card_class += " bubble-card-selected"
-            badge_html = """<span class="badge-warning">0.52 Low Confidence</span>""" if is_warning else """<span class="badge-verified">0.96 Confident</span>"""
-            bubble_type = "Sound Effect (Onomatopoeia)" if idx == 3 else "Speech Bubble • Panel"
+            badge_html = """<span class="badge-warning">Needs Transcription</span>""" if is_warning else """<span class="badge-verified">OCR Text Available</span>"""
+            bubble_type = "Detected Text Region • Panel"
 
             st.markdown(
                 f"""
@@ -331,21 +357,38 @@ with col_right:
                 st.caption(f"🇻🇳 Dịch: *{item['translated_text']}*")
 
             if is_warning:
-                st.markdown("""<div style="color:#C62828; font-size:0.75rem; font-weight:600; margin-top:4px;">⚠️ OCR confidence low. Please verify against original bubble.</div>""", unsafe_allow_html=True)
+                st.markdown("""<div style="color:#C62828; font-size:0.75rem; font-weight:600; margin-top:4px;">⚠️ No OCR text is available. Please transcribe this region from the original page.</div>""", unsafe_allow_html=True)
 
             st.markdown(f"""<div style="color:#8A9099; font-size:0.7rem; margin-top:4px;">Box: [x: {x1}, y: {y1}, w: {x2-x1}, h: {y2-y1}]</div></div>""", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+draft_changes = 0
+draft_error = None
+if current_page and edited_texts:
+    try:
+        draft_changes = save_ocr_draft(current_page.id, edited_texts)
+    except ReviewServiceError as exc:
+        draft_error = str(exc)
 
 # 5. Bottom Action Bar (Chuẩn Figma)
 st.markdown("---")
 col_bot_status, col_bot_btns = st.columns([1.5, 1.5])
 
 with col_bot_status:
+    if draft_error:
+        sync_label = f"Auto-sync failed: {draft_error}"
+        sync_color = "#C62828"
+    elif draft_changes:
+        sync_label = f"{draft_changes} OCR correction(s) saved to draft • Auto-sync ON"
+        sync_color = "#2E7D32"
+    else:
+        sync_label = "OCR draft synchronized with SQLite • Auto-sync ON"
+        sync_color = "#2E7D32"
     st.markdown(
-        """
+        f"""
         <div style="padding-top:10px; font-size:0.85rem; color:#6C7275;">
-            <span style="color:#2E7D32;">●</span> Changes saved automatically to draft • Auto-sync ON
+            <span style="color:{sync_color};">●</span> {sync_label}
         </div>
         """,
         unsafe_allow_html=True,
@@ -354,20 +397,21 @@ with col_bot_status:
 with col_bot_btns:
     b1, b2 = st.columns(2)
     with b1:
-        if st.button("Save OCR & Re-Translate", key="btn_retranslate", use_container_width=True):
+        if st.button("Flag for Second Review", key="btn_second_review", use_container_width=True):
             if current_page:
                 try:
-                    changed = save_ocr_and_retranslate(current_page.id, edited_texts)
-                    if changed:
-                        st.success("✅ Đã cập nhật OCR và dịch lại thành công!")
-                        st.rerun()
-                    else:
-                        st.info("Nội dung không có thay đổi.")
+                    flag_page_for_second_review(current_page.id)
+                    st.warning("Trang đã được đưa vào hàng chờ kiểm duyệt lần hai.")
+                    st.rerun()
                 except ReviewServiceError as exc:
                     st.error(str(exc))
 
     with b2:
-        if st.button("Confirm & Proceed to Typesetting ➔", key="btn_confirm_typeset", use_container_width=True):
+        if st.button("Confirm & Proceed to Translation ➔", key="btn_confirm_translate", use_container_width=True):
             if current_page:
-                st.query_params["page_id"] = str(current_page.id)
-                st.switch_page("pages/4_Typesetting.py")
+                try:
+                    confirm_review_and_translate(current_page.id, edited_texts)
+                    st.query_params["page_id"] = str(current_page.id)
+                    st.switch_page("pages/4_Typesetting.py")
+                except ReviewServiceError as exc:
+                    st.error(str(exc))
