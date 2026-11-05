@@ -14,7 +14,7 @@ from utils.auth_session import logout, require_auth
 from utils.page_navigation import render_page_navigation
 
 user = require_auth()
-render_page_navigation()
+render_page_navigation("Projects")
 
 try:
     user_id = int(user.id)
@@ -483,9 +483,9 @@ st.markdown(
     }
     .card-badge-status {
         display: inline-block;
-        background: #EEF2FF;
-        color: #4F46E5;
-        border: 1px solid #E0E7FF;
+        background: #EFF6FF;
+        color: #2563EB;
+        border: 1px solid #DBEAFE;
         font-size: 0.75rem;
         font-weight: 700;
         padding: 3px 12px;
@@ -518,6 +518,7 @@ st.markdown(
         justify-content: space-between;
         padding-top: 10px;
         border-top: 1px solid #F1F5F9;
+        min-height: 28px;
     }
     .card-user-meta {
         display: flex;
@@ -542,21 +543,34 @@ st.markdown(
         font-weight: 600;
     }
 
-    /* Open Chapter Studio Button inside card column */
+    /* Open Chapter Studio Link aligned in card footer (100% Image 1) */
+    .card-action-btn {
+        margin-top: -38px !important;
+        margin-bottom: 1.25rem !important;
+        display: flex !important;
+        justify-content: flex-end !important;
+        padding-right: 1.45rem !important;
+        position: relative !important;
+        z-index: 10 !important;
+    }
+    .card-action-btn div[data-testid="stButton"] {
+        width: auto !important;
+    }
     .card-action-btn div[data-testid="stButton"] > button {
         background: transparent !important;
-        border: 1px solid #E2E8F0 !important;
+        border: none !important;
         color: #1C274C !important;
         font-weight: 700 !important;
-        font-size: 0.85rem !important;
-        border-radius: 9999px !important;
-        padding: 6px 14px !important;
-        transition: all 0.15s ease !important;
+        font-size: 0.84rem !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        cursor: pointer !important;
+        transition: color 0.15s ease, transform 0.15s ease !important;
     }
     .card-action-btn div[data-testid="stButton"] > button:hover {
-        background: #1C274C !important;
-        color: #FFFFFF !important;
-        border-color: #1C274C !important;
+        background: transparent !important;
+        color: #2563EB !important;
+        transform: translateX(2px) !important;
     }
 
     /* 3 Summary Metric Cards at Bottom (Image 2) */
