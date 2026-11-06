@@ -118,6 +118,11 @@ class AuthService(ABC):
     def reset_password(self, token: str, new_password: str) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    def discard_password_reset_token(self, token: str) -> None:
+        """Invalidate a reset token when delivery cannot be completed."""
+        raise NotImplementedError
+
 
 class HttpAuthService(AuthService):
     """HTTP adapter for the configured backend authentication contract."""
@@ -212,6 +217,10 @@ class HttpAuthService(AuthService):
             allow_empty=True,
         )
 
+    def discard_password_reset_token(self, token: str) -> None:
+        # API backends own token delivery and invalidation.
+        del token
+
     def _auth_result(self, payload: Mapping[str, Any]) -> AuthResult:
         try:
             return AuthResult.from_mapping(payload)
@@ -289,6 +298,9 @@ class MockAuthService(AuthService):
         if token not in self._reset_tokens:
             raise AuthServiceError("This password reset link is invalid or has expired.")
         self._reset_tokens.remove(token)
+
+    def discard_password_reset_token(self, token: str) -> None:
+        self._reset_tokens.discard(token)
 
 
 class SqliteAuthService(AuthService):
@@ -428,6 +440,28 @@ class SqliteAuthService(AuthService):
         except Exception as exc:
             db.rollback()
             raise AuthServiceError("Unable to reset the password.") from exc
+        finally:
+            db.close()
+
+    def discard_password_reset_token(self, token: str) -> None:
+        if not token:
+            return
+        db = self.session_factory()
+        try:
+            reset = (
+                db.query(PasswordResetToken)
+                .filter(
+                    PasswordResetToken.token_hash == _hash_reset_token(token),
+                    PasswordResetToken.used_at.is_(None),
+                )
+                .first()
+            )
+            if reset is not None:
+                reset.used_at = _utc_now()
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            raise AuthServiceError("Unable to invalidate the reset request.") from exc
         finally:
             db.close()
 
