@@ -106,6 +106,11 @@ st.markdown(
         box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     }
 
+<<<<<<< HEAD
+# Render the Google Stitch component seamlessly
+components.html(chapter_studio_html, height=1150, scrolling=True)
+
+=======
     /* Staging Table Card */
     .section-card {
         background: #FFFFFF;
@@ -331,3 +336,4 @@ with c_bar_btn:
             st.query_params["project"] = project_name
             st.switch_page("pages/5_Queue_Monitor.py")
     st.markdown("</div>", unsafe_allow_html=True)
+>>>>>>> dev

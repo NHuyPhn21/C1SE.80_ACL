@@ -1,6 +1,6 @@
 """Database-backed project settings, glossary, and encrypted API keys."""
 
-import os
+
 
 import streamlit as st
 
@@ -75,15 +75,21 @@ with tab_api:
             type="password",
             placeholder="Enter a new API key",
         )
+
         if st.button("Save encrypted API key", key="save_api_key"):
             try:
-                settings_service.save_api_key(project.id, provider_key, api_key)
-                if provider_key == "gemini":
-                    os.environ["GEMINI_API_KEY"] = api_key.strip()
-                st.success("API key encrypted and saved to api_key_configs.")
+                settings_service.save_api_key(
+                    project.id,
+                    provider_key,
+                    api_key,
+                )
+
+                st.success("API key encrypted and saved successfully.")
                 st.rerun()
+
             except SettingsServiceError as exc:
                 st.error(str(exc))
+
 
 with tab_glossary:
     with st.container(border=True):
