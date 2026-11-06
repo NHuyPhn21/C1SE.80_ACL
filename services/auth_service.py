@@ -540,7 +540,13 @@ def _validate_password(password: str) -> None:
 
 
 def _hash_reset_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        token.encode("utf-8"),
+        b"acl-reset-token",
+        120_000,
+    )
+    return digest.hex()
 
 
 def _utc_now() -> datetime:
