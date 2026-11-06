@@ -76,6 +76,14 @@ class SqliteAuthAndTeamTests(unittest.TestCase):
         with self.assertRaisesRegex(AuthServiceError, "invalid or has expired"):
             self.auth.reset_password(str(token), "newpassword123")
 
+    def test_discarded_password_reset_token_is_rejected(self) -> None:
+        self.auth.register("Huy Phan", "huy@example.com", "password123")
+        token = self.auth.request_password_reset("huy@example.com")
+
+        self.auth.discard_password_reset_token(str(token))
+
+        self.assertFalse(self.auth.verify_password_reset_token(str(token)))
+
     def test_invite_creates_and_updates_project_membership(self) -> None:
         owner = self.auth.register("Owner", "owner@example.com", "password123")
         member = self.auth.register("Member", "member@example.com", "password123")

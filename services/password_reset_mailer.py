@@ -1,4 +1,4 @@
-"""Optional SendGrid delivery for password-reset links."""
+"""SendGrid delivery for password-reset links."""
 
 from __future__ import annotations
 
@@ -7,12 +7,25 @@ import os
 import requests
 
 
-def send_password_reset_email(email: str, reset_link: str) -> bool:
-    """Send a reset email when SendGrid is configured; return False in local mode."""
+class PasswordResetDeliveryError(RuntimeError):
+    """A user-safe password-reset email delivery failure."""
+
+
+def ensure_password_reset_delivery_ready() -> None:
+    """Fail before creating a token when transactional email is unavailable."""
     api_key = os.getenv("SENDGRID_API_KEY", "").strip()
     sender = os.getenv("SENDGRID_FROM_EMAIL", "").strip()
     if not api_key or not sender:
-        return False
+        raise PasswordResetDeliveryError(
+            "Password reset email is not configured. Please contact the administrator."
+        )
+
+
+def send_password_reset_email(email: str, reset_link: str) -> None:
+    """Deliver a password-reset link through SendGrid or raise a safe error."""
+    ensure_password_reset_delivery_ready()
+    api_key = os.getenv("SENDGRID_API_KEY", "").strip()
+    sender = os.getenv("SENDGRID_FROM_EMAIL", "").strip()
 
     try:
         response = requests.post(
@@ -45,6 +58,11 @@ def send_password_reset_email(email: str, reset_link: str) -> bool:
             },
             timeout=10,
         )
-    except requests.RequestException:
-        return False
-    return response.status_code == 202
+    except requests.RequestException as exc:
+        raise PasswordResetDeliveryError(
+            "The reset email could not be sent. Please try again later."
+        ) from exc
+    if response.status_code != 202:
+        raise PasswordResetDeliveryError(
+            "The reset email could not be sent. Please try again later."
+        )
