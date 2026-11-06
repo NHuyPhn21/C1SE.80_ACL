@@ -1,3 +1,4 @@
+
 """Persistence services for project glossary and encrypted provider keys."""
 
 import base64
@@ -46,16 +47,26 @@ class SettingsService:
                 .order_by(CustomGlossary.created_at.asc(), CustomGlossary.id.asc())
                 .all()
             )
-            return [GlossaryEntry(row.id, row.source_term, row.target_term) for row in rows]
+            return [
+                GlossaryEntry(row.id, row.source_term, row.target_term)
+                for row in rows
+            ]
         finally:
             db.close()
 
-    def create_glossary(self, project_id: int, source: str, target: str) -> GlossaryEntry:
+    def create_glossary(
+        self,
+        project_id: int,
+        source: str,
+        target: str,
+    ) -> GlossaryEntry:
         source, target = _validate_terms(source, target)
         db = self.session_factory()
         try:
             row = CustomGlossary(
-                project_id=project_id, source_term=source, target_term=target
+                project_id=project_id,
+                source_term=source,
+                target_term=target,
             )
             db.add(row)
             db.commit()
@@ -63,17 +74,29 @@ class SettingsService:
             return GlossaryEntry(row.id, row.source_term, row.target_term)
         except Exception as exc:
             db.rollback()
-            raise SettingsServiceError("Unable to add glossary entry.") from exc
+            raise SettingsServiceError(
+                "Unable to add glossary entry."
+            ) from exc
         finally:
             db.close()
 
-    def update_glossary(self, entry_id: int, source: str, target: str) -> None:
+    def update_glossary(
+        self,
+        entry_id: int,
+        source: str,
+        target: str,
+    ) -> None:
         source, target = _validate_terms(source, target)
         db = self.session_factory()
         try:
-            row = db.query(CustomGlossary).filter(CustomGlossary.id == entry_id).first()
+            row = (
+                db.query(CustomGlossary)
+                .filter(CustomGlossary.id == entry_id)
+                .first()
+            )
             if row is None:
                 raise SettingsServiceError("Glossary entry not found.")
+
             row.source_term = source
             row.target_term = target
             db.commit()
@@ -86,9 +109,14 @@ class SettingsService:
     def delete_glossary(self, entry_id: int) -> None:
         db = self.session_factory()
         try:
-            row = db.query(CustomGlossary).filter(CustomGlossary.id == entry_id).first()
+            row = (
+                db.query(CustomGlossary)
+                .filter(CustomGlossary.id == entry_id)
+                .first()
+            )
             if row is None:
                 raise SettingsServiceError("Glossary entry not found.")
+
             db.delete(row)
             db.commit()
         except SettingsServiceError:
@@ -97,10 +125,16 @@ class SettingsService:
         finally:
             db.close()
 
-    def save_api_key(self, project_id: int, provider: str, api_key: str) -> None:
+    def save_api_key(
+        self,
+        project_id: int,
+        provider: str,
+        api_key: str,
+    ) -> None:
         clean_key = api_key.strip()
         if not clean_key:
             raise SettingsServiceError("API key is required.")
+
         db = self.session_factory()
         try:
             row = (
@@ -111,7 +145,9 @@ class SettingsService:
                 )
                 .first()
             )
+
             encrypted = self._fernet.encrypt(clean_key.encode()).decode()
+
             if row is None:
                 row = ApiKeyConfig(
                     project_id=project_id,
@@ -123,11 +159,16 @@ class SettingsService:
             else:
                 row.encrypted_key = encrypted
                 row.is_active = True
+
             db.commit()
         finally:
             db.close()
 
-    def load_api_key(self, project_id: int, provider: str) -> str | None:
+    def load_api_key(
+        self,
+        project_id: int,
+        provider: str,
+    ) -> str | None:
         db = self.session_factory()
         try:
             row = (
@@ -139,37 +180,76 @@ class SettingsService:
                 )
                 .first()
             )
+
             if row is None:
                 return None
+
             try:
-                return self._fernet.decrypt(row.encrypted_key.encode()).decode()
+                return self._fernet.decrypt(
+                    row.encrypted_key.encode()
+                ).decode()
             except InvalidToken as exc:
-                raise SettingsServiceError("Stored API key cannot be decrypted.") from exc
+                raise SettingsServiceError(
+                    "Stored API key cannot be decrypted."
+                ) from exc
         finally:
             db.close()
 
+    def load_api_key_for_pipeline(
+        self,
+        project_id: int,
+        provider: str = "gemini",
+    ) -> str | None:
+        return self.load_api_key(project_id, provider)
 
-def project_for_user(session_factory, owner_id: int, title: str) -> Project:
+
+def project_for_user(
+    session_factory,
+    owner_id: int,
+    title: str,
+) -> Project:
     db = session_factory()
     try:
-        project = db.query(Project).filter(Project.title == title).first()
+        project = (
+            db.query(Project)
+            .filter(Project.title == title)
+            .first()
+        )
+
         if project is None:
-            project = db.query(Project).filter(Project.owner_id == owner_id).first()
+            project = (
+                db.query(Project)
+                .filter(Project.owner_id == owner_id)
+                .first()
+            )
+
         if project is None:
-            project = Project(owner_id=owner_id, title=title)
+            project = Project(
+                owner_id=owner_id,
+                title=title,
+            )
             db.add(project)
             db.commit()
             db.refresh(project)
+
         db.expunge(project)
         return project
     finally:
         db.close()
 
 
-def _validate_terms(source: str, target: str) -> tuple[str, str]:
-    clean_source, clean_target = source.strip(), target.strip()
+def _validate_terms(
+    source: str,
+    target: str,
+) -> tuple[str, str]:
+    clean_source = source.strip()
+    clean_target = target.strip()
+
     if not clean_source or not clean_target:
-        raise SettingsServiceError("Both source and target terms are required.")
+        raise SettingsServiceError(
+            "Both source and target terms are required."
+        )
+
     return clean_source, clean_target
 
 
@@ -180,13 +260,18 @@ def _fernet_key(secret: str) -> bytes:
 
 def _local_secret() -> str:
     secret = os.getenv("ACL_CONFIG_SECRET", "").strip()
+
     if secret:
         return secret
+
     secret_path = Path(__file__).parents[1] / ".acl_config_secret"
+
     if secret_path.exists():
         return secret_path.read_text(encoding="utf-8").strip()
+
     secret = secrets.token_urlsafe(32)
     secret_path.write_text(secret, encoding="utf-8")
     secret_path.chmod(0o600)
     os.environ["ACL_CONFIG_SECRET"] = secret
+
     return secret

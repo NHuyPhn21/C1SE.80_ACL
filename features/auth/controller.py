@@ -76,7 +76,11 @@ def _register(action: dict[str, Any]) -> None:
 
 
 def _navigate(view: str) -> None:
-    page = "pages/0_Register.py" if view == "register" else "pages/0_Login.py"
+    pages = {
+        "register": "pages/0_Register.py",
+        "forgot": "pages/0_Forgot_Password.py",
+    }
+    page = pages.get(view, "pages/0_Login.py")
     st.switch_page(page)
 
 
