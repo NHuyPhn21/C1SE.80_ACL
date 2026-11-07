@@ -1,8 +1,8 @@
 @echo off
-title ACL - Streamlit Native Frontend
+title ACL - React Frontend
 echo ========================================================
-echo   ACL - Automated Comic Localization (Streamlit Native)
-echo   Opening frontend on http://localhost:8501
+echo   ACL - Automated Comic Localization (Vite + React)
+echo   Opening frontend on http://localhost:5173
 echo ========================================================
-python -m streamlit run app.py --server.port 8501
+npm --prefix frontend run dev
 pause

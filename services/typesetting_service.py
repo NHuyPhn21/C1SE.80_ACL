@@ -16,6 +16,7 @@ def save_translation_and_render(
     page_id: int,
     region_id: int,
     translated_text: str,
+    font_size: float | None = None,
     *,
     session_factory=SessionLocal,
     renderer: Callable[..., str | None] = process_comic_page,
@@ -36,6 +37,8 @@ def save_translation_and_render(
             raise TypesettingServiceError("Page or text region not found.")
 
         region.translated_text = clean_text
+        if font_size is not None:
+            region.font_size = font_size
         db.commit()
 
         output_path = renderer(page_id=page_id, use_lama_api=False)

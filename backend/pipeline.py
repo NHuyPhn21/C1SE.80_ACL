@@ -61,6 +61,7 @@ def run_full_acl_pipeline(
     force_reprocess: bool = False,
     use_lama_api: bool = False,
     progress_callback=None,
+    project_id: int | None = None,
 ) -> dict:
     """
     Main AI Processing Pipeline (End-to-End 5 bước):
@@ -142,7 +143,7 @@ def run_full_acl_pipeline(
         report(35, "MangaOCR")
         print(f"🌐 [Bước 3/5] Kiểm tra và dịch lời thoại tiếng Việt cho Page ID: {page.id}...")
         report(60, "Gemini Translation")
-        translate_manga_text(page_id=page.id)
+        translate_manga_text(page_id=page.id, project_id=project_id or page.chapter.project_id)
         untranslated = db.query(TextRegion).filter(
             TextRegion.page_id == page.id,
             TextRegion.original_text.isnot(None),

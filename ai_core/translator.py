@@ -1,6 +1,7 @@
 import os
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 try:
@@ -21,114 +22,177 @@ from backend.models import TextRegion
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-def _gemini_client():
-    """Read the latest key so Settings changes apply without restarting Streamlit."""
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+def _safe_log(message: str) -> None:
+    """Keep worker logs usable on Windows consoles with legacy encodings."""
+    print(message.encode("ascii", "backslashreplace").decode("ascii"))
+
+
+def _valid_translation(value: object) -> bool:
+    text = str(value).strip()
+    return bool(text and text not in {"...", "…", "N/A", "null"})
+
+
+def _gemini_client(api_key: str | None = None):
+    """Read the latest key so provider settings apply without restarting the API."""
+    api_key = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
     return (
         genai.Client(
             api_key=api_key,
-            http_options=types.HttpOptions(timeout=30000),
+            http_options=types.HttpOptions(timeout=60000),
         )
         if (genai and types and api_key)
         else None
     )
 
 
-def translate_batch_dict(ja_dict: dict[str, str]) -> dict[str, str]:
+def _run_with_timeout(function, timeout_seconds: int):
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(function)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except FutureTimeoutError as exc:
+        future.cancel()
+        raise TimeoutError(
+            f"Translation provider timed out after {timeout_seconds} seconds"
+        ) from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def translate_batch_dict(
+    ja_dict: dict[str, str],
+    api_key: str | None = None,
+    project_id: int | None = None,
+) -> dict[str, str]:
     """
-    Dịch toàn bộ bóng thoại trong 1 trang chỉ với 1 Request.
-    Tối ưu hóa thời gian chờ (Fail-fast) và gộp Batch cho cả Fallback.
+    Dịch toàn bộ bóng thoại 1 trang trong 1 Request Gemini.
+    
+    Args:
+        ja_dict: Dict[str, str] - mapping {region_id: original_text}
+        api_key: Optional Gemini API key (if not provided, will try .env or database)
+        project_id: Optional project ID to load API key from database
+    
+    Returns:
+        Dict[str, str]: Translated text mapping, empty dict if translation failed
+        
+    Note: Fallback to Google Translator only if Gemini is explicitly unavailable.
+          If API key is invalid/exhausted, returns empty dict to signal error.
     """
     if not ja_dict:
         return {}
 
+    # Nếu project_id được truyền, load API key từ database
+    if project_id and not api_key:
+        try:
+            from services.settings_service import SettingsService
+            api_key = SettingsService().load_api_key_for_pipeline(project_id)
+            if api_key:
+                _safe_log(f"✓ Loaded Gemini API key from database for project {project_id}")
+        except Exception as e:
+            _safe_log(f"⚠️ Failed to load API key from DB: {e}")
+
     prompt = (
-        "Bạn là một dịch giả truyện tranh (manga) chuyên nghiệp.\n"
-        "Hãy dịch danh sách các câu thoại tiếng Nhật dưới đây sang tiếng Việt tự nhiên, "
-        "ngắn gọn, giàu cảm xúc và thống nhất đại từ xưng hô giữa các nhân vật trong cùng trang truyện.\n"
-        "YÊU CẦU BẮT BUỘC: Chỉ trả về một JSON Object hợp lệ giữ nguyên chính xác các key (ID) ban đầu, "
-        "value là bản dịch tiếng Việt tương ứng.\n\n"
-        f"Dữ liệu tiếng Nhật:\n{json.dumps(ja_dict, ensure_ascii=False, indent=2)}"
+        "You are a professional manga translator. Translate the following Japanese dialogue "
+        "to Vietnamese naturally, concisely, emotionally, and with consistent pronouns across the page.\n"
+        "CRITICAL: Return ONLY a valid JSON object with EXACT same keys (IDs) as input, "
+        "values are Vietnamese translations. No markdown, no extra text.\n\n"
+        f"Input data:\n{json.dumps(ja_dict, ensure_ascii=False, indent=2)}"
     )
 
     configured_model = os.getenv("GEMINI_MODEL", "").strip()
-    candidate_models = [
+    candidate_models = list(dict.fromkeys(
         model for model in (
             configured_model,
-            "gemini-3.6-flash",
-            "gemini-flash-latest",
+            "gemini-3.5-flash",
             "gemini-3.8-flash",
-            "gemini-3.7-flash",
         )
         if model
-    ]
+    ))
 
-    client = _gemini_client()
+    # === TRY GEMINI FIRST ===
+    client = _gemini_client(api_key)
     if client:
+        _safe_log(f"→ Sending {len(ja_dict)} regions to Gemini in 1 request...")
         for model_name in candidate_models:
-            for attempt in range(2):
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.3,
-                        ),
-                    )
-                    return json.loads(response.text)
-
-                except Exception as api_error:
-                    err_msg = str(api_error)
-                    retryable = any(
-                        code in err_msg
-                        for code in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]
-                    )
-                    print(
-                        f"⚠️ Gemini [{model_name} - lần {attempt + 1}/2]: "
-                        f"{err_msg[:300]}"
-                    )
-                    if not retryable:
-                        break
-                    if attempt == 0:
-                        time.sleep(2)
-
-    # --- LỚP BẢO HIỂM SIÊU TỐC (1-REQUEST BATCH FALLBACK) ---
-    print("⚡ Đang kích hoạt Fallback Translator (Chế độ gộp 1-Request, tốn ~0.5s)...")
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.3,
+                    ),
+                )
+                response_text = (response.text or "").strip()
+                if response_text.startswith("```"):
+                    response_text = response_text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                
+                parsed = json.loads(response_text)
+                if isinstance(parsed, dict) and len(parsed) == len(ja_dict):
+                    translations = {
+                        key: str(parsed[key]).strip()
+                        for key in ja_dict
+                        if _valid_translation(parsed[key])
+                    }
+                    if len(translations) == len(ja_dict):
+                        _safe_log(f"✓ Gemini [{model_name}] translated {len(translations)} regions successfully!")
+                        return translations
+                
+                _safe_log(f"⚠️ Gemini [{model_name}] returned incomplete or invalid response")
+            except Exception as e:
+                err_str = str(e)
+                _safe_log(f"⚠️ Gemini [{model_name}]: {err_str[:300]}")
+                
+                # If quota exhausted or key invalid, don't try fallback
+                if any(marker in err_str for marker in ("429", "RESOURCE_EXHAUSTED", "401", "UNAUTHENTICATED")):
+                    _safe_log("⚠️ Gemini API key exhausted or invalid. Cannot proceed.")
+                    return {}
+    else:
+        _safe_log("⚠️ Gemini client unavailable")
+        return {}
+    
+    # Only fallback if Gemini was NOT quota-related
+    _safe_log(f"→ Falling back to Google Translator for {len(ja_dict)} regions...")
     try:
         from deep_translator import GoogleTranslator
         translator = GoogleTranslator(source="ja", target="vi")
-
-        keys = list(ja_dict.keys())
-        # Gom toàn bộ câu thoại bằng ký tự phân tách dòng để gửi đi trong 1 lần duy nhất
-        combined_text = "\n ||| \n".join(ja_dict[k].strip() for k in keys)
-        translated_combined = translator.translate(combined_text)
-
-        translated_parts = [p.strip() for p in translated_combined.split("|||")]
-
-        # Nếu số lượng câu tách ra khớp hoàn toàn
-        if len(translated_parts) == len(keys):
-            return dict(zip(keys, translated_parts))
-
-        # Nếu bị lệch dòng thì tách theo '\n'
-        lines = [line.strip(" |") for line in translated_combined.splitlines() if line.strip()]
-        if len(lines) == len(keys):
-            return dict(zip(keys, lines))
-
-        # Trường hợp hiếm bị gộp dòng mới dịch lẻ
-        return {k: translator.translate(v) if v.strip() else "" for k, v in ja_dict.items()}
-
+        translated = {}
+        
+        for idx, key in enumerate(ja_dict, 1):
+            source_text = ja_dict[key].strip()
+            if not source_text:
+                continue
+            
+            try:
+                # Long delay to avoid rate limit
+                wait_time = 5 + (idx % 3)  # 5-7 seconds per request
+                _safe_log(f"  [{idx}/{len(ja_dict)}] Waiting {wait_time}s before translating...")
+                time.sleep(wait_time)
+                
+                value = translator.translate(source_text).strip()
+                if _valid_translation(value):
+                    translated[key] = value
+                    _safe_log(f"  ✓ ID {key}")
+            except Exception as e:
+                _safe_log(f"  ✗ ID {key}: {str(e)[:80]}")
+                # Continue to next even if this one fails
+        
+        _safe_log(f"✓ Google Translator completed: {len(translated)}/{len(ja_dict)} translated")
+        return translated
+    
     except ImportError:
-        print(
-            "⚠️ Chưa cài deep-translator. Cài bằng: "
-            "python -m pip install deep-translator"
-        )
-    except Exception as fb_err:
-        print(f"⚠️ Lỗi Fallback Translator: {fb_err}")
-        return {}
+        _safe_log("⚠️ deep-translator not installed")
+    except Exception as e:
+        _safe_log(f"⚠️ Fallback error: {e}")
+    
+    return {}
 
 
-def translate_manga_text(page_id: int = None, batch_size: int = 30):
+def translate_manga_text(
+    page_id: int = None,
+    batch_size: int = 1000,  # Gộp tất cả câu trong 1 request
+    project_id: int | None = None,
+):
     """
     Quét các bóng thoại chưa dịch trong SQLite và dịch theo từng lô (Batch).
     - Nếu truyền vào page_id: Chỉ dịch các bóng thoại của trang đó (dùng cho Pipeline).
@@ -151,22 +215,29 @@ def translate_manga_text(page_id: int = None, batch_size: int = 30):
         ]
 
         if not valid_regions:
-            print("✅ Tất cả các bóng thoại đều đã có bản dịch!")
+            _safe_log("✅ Tất cả các bóng thoại đều đã có bản dịch!")
             return True
 
-        print(f"🚀 Bắt đầu dịch GỘP (Batch Mode) cho {len(valid_regions)} bóng thoại...")
+        _safe_log(f"🚀 Bắt đầu dịch GỘP (Batch Mode) cho {len(valid_regions)} bóng thoại...")
         t_start = time.time()
 
-        # Chia thành từng lô tối đa 30 bóng thoại / 1 Request để tối ưu ngữ cảnh và token
+        # Keep requests small enough for long pages and avoid provider request timeouts.
         for i in range(0, len(valid_regions), batch_size):
             chunk = valid_regions[i : i + batch_size]
             payload = {str(r.id): r.original_text.strip() for r in chunk}
 
-            print(f"⚡ Đang gửi 1 Request gộp {len(chunk)} câu thoại lên Gemini...")
-            translated_map = translate_batch_dict(payload)
+            _safe_log(f"⚡ Đang gửi 1 Request gộp {len(chunk)} câu thoại...")
+            translated_map = translate_batch_dict(
+                payload,
+                api_key=None,
+                project_id=project_id
+            )
 
             if not translated_map:
-                print("❌ Không nhận được phản hồi dịch cho lô này. Vui lòng kiểm tra lại GEMINI_API_KEY.")
+                _safe_log(
+                    f"❌ Không nhận được phản hồi dịch cho lô "
+                    f"{i + 1}-{i + len(chunk)}. Lô này sẽ được đánh dấu chưa dịch."
+                )
                 continue
 
             # Cập nhật toàn bộ kết quả vào SQLite chỉ trong 1 lần commit
@@ -174,15 +245,15 @@ def translate_manga_text(page_id: int = None, batch_size: int = 30):
                 vi_text = translated_map.get(str(r.id), "").strip()
                 if vi_text:
                     r.translated_text = vi_text
-                    print(f"  [ID {r.id}] {r.original_text}  ➔  {vi_text}")
+                    _safe_log(f"  [ID {r.id}] {r.original_text[:30]}... ➔ {vi_text[:30]}...")
 
             db.commit()
 
-        print(f"🎉 Hoàn tất dịch {len(valid_regions)} bóng thoại chỉ trong {time.time() - t_start:.2f} giây!")
+        _safe_log(f"🎉 Hoàn tất dịch {len(valid_regions)} bóng thoại chỉ trong {time.time() - t_start:.2f} giây!")
         return True
 
     except Exception as e:
-        print(f"❌ Lỗi hệ thống khi dịch: {e}")
+        _safe_log(f"❌ Lỗi hệ thống khi dịch: {e}")
         return False
     finally:
         db.close()
