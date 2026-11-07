@@ -294,7 +294,7 @@ def get_settings(user_id: int) -> dict:
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             },
             "providers": {
-                "gemini": bool(os.getenv("GEMINI_API_KEY")) or db.query(ApiKeyConfig).join(Project).filter(
+                "gemini": db.query(ApiKeyConfig).join(Project).filter(
                     Project.owner_id == user_id,
                     ApiKeyConfig.provider == "gemini",
                     ApiKeyConfig.is_active.is_(True),

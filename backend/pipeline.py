@@ -152,8 +152,8 @@ def run_full_acl_pipeline(
         ).count()
         if untranslated:
             raise RuntimeError(
-                f"Không dịch được {untranslated} vùng chữ của trang {working_img_path.name}. "
-                "Hãy kiểm tra GEMINI_API_KEY hoặc kết nối dịch dự phòng."
+                f"Failed to translate {untranslated} regions on page {working_img_path.name}. "
+                "Please verify your Gemini API key is set in Project Settings."
             )
 
         # 5. BƯỚC 4 & 5: Tạo Mask bảo vệ viền + Fast Inpainting + Dàn trang tiếng Việt

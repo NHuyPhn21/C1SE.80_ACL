@@ -33,14 +33,20 @@ def _valid_translation(value: object) -> bool:
 
 
 def _gemini_client(api_key: str | None = None):
-    """Read the latest key so provider settings apply without restarting the API."""
-    api_key = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
+    """Create Gemini client with provided API key. Key MUST be provided."""
+    if not api_key:
+        return None
+    
+    api_key = api_key.strip()
+    if not api_key:
+        return None
+    
     return (
         genai.Client(
             api_key=api_key,
             http_options=types.HttpOptions(timeout=60000),
         )
-        if (genai and types and api_key)
+        if (genai and types)
         else None
     )
 
@@ -66,39 +72,33 @@ def translate_batch_dict(
 ) -> dict[str, str]:
     """
     Dịch toàn bộ bóng thoại 1 trang trong 1 Request Gemini.
+    API key MUST be provided either directly or via project_id from database.
     
     Args:
         ja_dict: Dict[str, str] - mapping {region_id: original_text}
-        api_key: Optional Gemini API key (if not provided, will try .env or database)
-        project_id: Optional project ID to load API key from database
+        api_key: Gemini API key (if not provided, will load from database via project_id)
+        project_id: Project ID to load API key from database (required if api_key not provided)
     
     Returns:
         Dict[str, str]: Translated text mapping, empty dict if translation failed
-        
-    Note: Fallback to Google Translator only if Gemini is explicitly unavailable.
-          If API key is invalid/exhausted, returns empty dict to signal error.
     """
     if not ja_dict:
         return {}
 
-    # Nếu project_id được truyền, load API key từ database
-    if project_id and not api_key:
+    # Load API key from database if not provided directly
+    if not api_key and project_id:
         try:
             from services.settings_service import SettingsService
-            db_key = SettingsService().load_api_key_for_pipeline(project_id)
-            if db_key:
-                api_key = db_key
+            api_key = SettingsService().load_api_key_for_pipeline(project_id)
+            if api_key:
                 _safe_log(f"✓ Loaded Gemini API key from database for project {project_id}")
             else:
-                _safe_log(f"⚠️ No API key in DB for project {project_id}, trying .env fallback")
-                api_key = os.getenv("GEMINI_API_KEY", "").strip() or None
-                if api_key:
-                    _safe_log(f"✓ Using .env GEMINI_API_KEY (last 10 chars: ...{api_key[-10:]})")
+                _safe_log(f"❌ ERROR: No Gemini API key found in database for project {project_id}")
+                _safe_log("   Please set your Gemini API key in Settings before running pipeline")
+                return {}
         except Exception as e:
-            _safe_log(f"⚠️ Failed to load API key from DB: {e}, trying .env fallback")
-            api_key = os.getenv("GEMINI_API_KEY", "").strip() or None
-            if api_key:
-                _safe_log(f"✓ Using .env GEMINI_API_KEY (last 10 chars: ...{api_key[-10:]})")
+            _safe_log(f"❌ ERROR: Failed to load API key from database: {e}")
+            return {}
 
     prompt = (
         "You are a professional manga translator. Translate the following Japanese dialogue "
