@@ -715,12 +715,25 @@ def translate_page(request: TranslationRequest) -> dict:
         if source:
             from ai_core.translator import translate_batch_dict
 
-            api_key = SettingsService().load_api_key_for_pipeline(page.chapter.project_id)
-            translated = translate_batch_dict(source, api_key=api_key)
+            translated = translate_batch_dict(source, project_id=page.chapter.project_id)
             for region_id, text in translated.items():
                 region = regions.get(int(region_id))
                 if region is not None:
                     region.translated_text = text.strip()
+        db.commit()
+
+        # Phase 2: sau khi dịch xong, tự động chạy Inpainting + Typesetting
+        from backend.image_utils import process_comic_page, DEFAULT_FONT_PATH, BASE_DIR
+
+        final_output_path = process_comic_page(
+            page_id=page.id,
+            font_path=DEFAULT_FONT_PATH,
+        )
+        if final_output_path:
+            page.rendered_path = str(Path(final_output_path).relative_to(BASE_DIR)).replace("\\", "/")
+            page.status = "COMPLETED"
+        else:
+            page.status = "TRANSLATED"
         db.commit()
         db.refresh(page)
         return _serialize_page(page)

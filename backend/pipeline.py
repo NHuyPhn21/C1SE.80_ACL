@@ -62,14 +62,12 @@ def run_full_acl_pipeline(
     use_lama_api: bool = False,
     progress_callback=None,
     project_id: int | None = None,
+    stop_after_ocr: bool = True,
 ) -> dict:
     """
-    Main AI Processing Pipeline (End-to-End 5 bước):
-    1. YOLOv8 (manga_v14/best.pt) phát hiện bóng thoại
-    2. MangaOCR trích xuất chữ Nhật
-    3. Gemini (gemini-3.8-flash) dịch Batch JSON toàn trang trong 1 Request
-    4. Topological Mask + Fast Inpainting xóa sạch chữ gốc bảo toàn nét vẽ
-    5. Distance-Transform Auto-Typesetting dàn trang tiếng Việt vào tâm thị giác
+    Main AI Processing Pipeline:
+    Phase 1 (stop_after_ocr=True): YOLOv8 Detection + MangaOCR → dừng, chờ user review OCR
+    Phase 2 (stop_after_ocr=False): Translation + Inpainting + Typesetting (full E2E)
     """
     t_start = time.time()
     db = SessionLocal()
@@ -139,6 +137,21 @@ def run_full_acl_pipeline(
         else:
             print(f"ℹ️ Trang {working_img_path.name} (Page ID: {page.id}) đã có sẵn {len(existing_regions)} bóng thoại trong DB.")
 
+        # DỪNG sau OCR để user review/sửa text trước khi dịch (tiết kiệm quota dịch thuật)
+        if stop_after_ocr:
+            report(60, "Awaiting OCR Review")
+            page.status = "AWAITING_REVIEW"
+            db.commit()
+            elapsed = round(time.time() - t_start, 2)
+            print(f"⏸️ OCR HOÀN TẤT cho {working_img_path.name} trong {elapsed}s. Chờ kiểm duyệt tại Review Studio.\n")
+            return {
+                "status": "awaiting_review",
+                "page_id": page.id,
+                "original_path": str(working_img_path),
+                "final_path": None,
+                "elapsed_seconds": elapsed,
+            }
+
         # 4. BƯỚC 3: Dịch thuật gộp (Batch JSON Translation) cho các câu chưa dịch trên trang này
         report(35, "MangaOCR")
         print(f"🌐 [Bước 3/5] Kiểm tra và dịch lời thoại tiếng Việt cho Page ID: {page.id}...")
@@ -151,10 +164,9 @@ def run_full_acl_pipeline(
             (TextRegion.translated_text.is_(None) | (TextRegion.translated_text == "")),
         ).count()
         if untranslated:
-            raise RuntimeError(
-                f"Failed to translate {untranslated} regions on page {working_img_path.name}. "
-                "Please verify your Gemini API key is set in Project Settings."
-            )
+            # Allow partial success - log warning but continue
+            print(f"⚠️ Warning: {untranslated} regions not translated on page {working_img_path.name}")
+            print(f"   Continuing with inpainting and typesetting...")
 
         # 5. BƯỚC 4 & 5: Tạo Mask bảo vệ viền + Fast Inpainting + Dàn trang tiếng Việt
         print(f"🎨 [Bước 4 & 5/5] Tẩy chữ và dàn trang cho Page ID: {page.id}...")

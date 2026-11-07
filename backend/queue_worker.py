@@ -67,6 +67,7 @@ def _run_pipeline_task(task_id: int, chapter_id: int) -> None:
         message=f"Pipeline started for {len(page_inputs)} page(s).",
     )
     failed = False
+    awaiting_review = False
 
     for index, (_, input_path, page_number) in enumerate(page_inputs):
         base_progress = index * 100 // len(page_inputs)
@@ -88,6 +89,15 @@ def _run_pipeline_task(task_id: int, chapter_id: int) -> None:
             progress_callback=report,
             project_id=project_id,
         )
+        if result.get("status") == "awaiting_review":
+            awaiting_review = True
+            _write_task_update(
+                task_id,
+                progress=round((index + 1) * 100 / len(page_inputs)),
+                level="INFO",
+                message=f"Page {page_number}: OCR complete, awaiting review.",
+            )
+            continue
         if result.get("status") != "success":
             failed = True
             _write_task_update(
@@ -106,6 +116,14 @@ def _run_pipeline_task(task_id: int, chapter_id: int) -> None:
 
     if failed:
         _write_task_update(task_id, status="FAILED")
+    elif awaiting_review:
+        _write_task_update(
+            task_id,
+            status="AWAITING_REVIEW",
+            progress=60,
+            level="INFO",
+            message="OCR complete. Please review text in Review Studio, then translate to continue.",
+        )
     else:
         _write_task_update(
             task_id,

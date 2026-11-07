@@ -12,6 +12,11 @@ except ImportError:
     types = None
 
 try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+try:
     from dotenv import load_dotenv
 except ImportError:
     def load_dotenv(*args, **kwargs):
@@ -44,11 +49,39 @@ def _gemini_client(api_key: str | None = None):
     return (
         genai.Client(
             api_key=api_key,
-            http_options=types.HttpOptions(timeout=60000),
+            http_options=types.HttpOptions(timeout=120000),
         )
         if (genai and types)
         else None
     )
+
+
+def _openai_client(api_key: str | None = None):
+    """Create OpenAI client with provided API key."""
+    if not api_key or not OpenAI:
+        return None
+    
+    api_key = api_key.strip()
+    if not api_key:
+        return None
+    
+    return OpenAI(api_key=api_key, timeout=120.0)
+
+
+def _deepl_client(api_key: str | None = None):
+    """Create DeepL client with provided API key."""
+    if not api_key:
+        return None
+    
+    api_key = api_key.strip()
+    if not api_key:
+        return None
+    
+    try:
+        import deepl
+        return deepl.Translator(api_key)
+    except ImportError:
+        return None
 
 
 def _run_with_timeout(function, timeout_seconds: int):
@@ -85,20 +118,32 @@ def translate_batch_dict(
     if not ja_dict:
         return {}
 
-    # Load API key from database if not provided directly
-    if not api_key and project_id:
+    # Load API keys from database
+    gemini_key = None
+    deepl_key = None
+    
+    if project_id:
         try:
             from services.settings_service import SettingsService
-            api_key = SettingsService().load_api_key_for_pipeline(project_id)
-            if api_key:
+            settings = SettingsService()
+            
+            # Load DeepL key first (preferred)
+            deepl_key = settings.load_api_key_for_pipeline(project_id, provider="deepl")
+            if deepl_key:
+                _safe_log(f"✓ Loaded DeepL API key from database for project {project_id}")
+            
+            # Load Gemini key
+            gemini_key = settings.load_api_key_for_pipeline(project_id, provider="gemini")
+            if gemini_key:
                 _safe_log(f"✓ Loaded Gemini API key from database for project {project_id}")
-            else:
-                _safe_log(f"❌ ERROR: No Gemini API key found in database for project {project_id}")
-                _safe_log("   Please set your Gemini API key in Settings before running pipeline")
-                return {}
+                
         except Exception as e:
-            _safe_log(f"❌ ERROR: Failed to load API key from database: {e}")
+            _safe_log(f"❌ ERROR: Failed to load API keys from database: {e}")
             return {}
+    
+    # Use provided api_key as Gemini key if given
+    if api_key and not gemini_key:
+        gemini_key = api_key
 
     prompt = (
         "You are a professional manga translator. Translate the following Japanese dialogue "
@@ -112,88 +157,98 @@ def translate_batch_dict(
     candidate_models = list(dict.fromkeys(
         model for model in (
             configured_model,
+            "gemini-3.6-flash",
+            "gemini-2.5-flash",
             "gemini-3.5-flash",
             "gemini-3.8-flash",
+            "gemini-flash-latest",
         )
         if model
     ))
 
-    # === TRY GEMINI FIRST ===
-    client = _gemini_client(api_key)
-    if client:
-        _safe_log(f"→ Sending {len(ja_dict)} regions to Gemini in 1 request...")
-        for model_name in candidate_models:
+    # === TRY DEEPL FIRST (Fast & Stable) ===
+    if deepl_key:
+        _safe_log(f"→ Sending {len(ja_dict)} regions to DeepL...")
+        deepl_client = _deepl_client(deepl_key)
+        if deepl_client:
+            try:
+                translated = {}
+                for key, source_text in ja_dict.items():
+                    if not source_text.strip():
+                        continue
+                    try:
+                        result = deepl_client.translate_text(
+                            source_text,
+                            source_lang="JA",
+                            target_lang="VI"
+                        )
+                        if result and result.text:
+                            translated[key] = result.text.strip()
+                    except Exception as e:
+                        _safe_log(f"  ✗ ID {key}: {str(e)[:80]}")
+                
+                if len(translated) == len(ja_dict):
+                    _safe_log(f"✓ DeepL translated all {len(translated)} regions successfully!")
+                    return translated
+                elif translated:
+                    _safe_log(f"✓ DeepL partial: {len(translated)}/{len(ja_dict)} translated")
+                    return translated
+                else:
+                    _safe_log("⚠️ DeepL returned no valid translations")
+            except Exception as e:
+                _safe_log(f"⚠️ DeepL error: {str(e)[:300]}")
+        else:
+            _safe_log("⚠️ DeepL client unavailable")
+    else:
+        _safe_log("⚠️ No DeepL API key found, trying Gemini...")
+
+    # === TRY GEMINI (Single model, short timeout) ===
+    if gemini_key:
+        _safe_log(f"→ Sending {len(ja_dict)} regions to Gemini [gemini-3.6-flash]...")
+        client = _gemini_client(gemini_key)
+        if client:
             try:
                 response = client.models.generate_content(
-                    model=model_name,
+                    model="gemini-3.6-flash",
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         temperature=0.3,
+                        max_output_tokens=8192,
                     ),
                 )
                 response_text = (response.text or "").strip()
+                _safe_log(f"  Raw response length: {len(response_text)} chars")
+                
                 if response_text.startswith("```"):
                     response_text = response_text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
                 
                 parsed = json.loads(response_text)
-                if isinstance(parsed, dict) and len(parsed) == len(ja_dict):
-                    translations = {
-                        key: str(parsed[key]).strip()
-                        for key in ja_dict
-                        if _valid_translation(parsed[key])
-                    }
+                if isinstance(parsed, dict):
+                    translations = {}
+                    for key in ja_dict:
+                        if key in parsed and _valid_translation(parsed[key]):
+                            translations[key] = str(parsed[key]).strip()
+                    
                     if len(translations) == len(ja_dict):
-                        _safe_log(f"✓ Gemini [{model_name}] translated {len(translations)} regions successfully!")
+                        _safe_log(f"✓ Gemini translated {len(translations)} regions successfully!")
                         return translations
-                
-                _safe_log(f"⚠️ Gemini [{model_name}] returned incomplete or invalid response")
+                    elif translations:
+                        _safe_log(f"✓ Gemini partial: {len(translations)}/{len(ja_dict)} translated")
+                        return translations
+                    else:
+                        _safe_log("⚠️ Gemini returned no valid translations")
+                else:
+                    _safe_log(f"⚠️ Gemini response is not a dict")
             except Exception as e:
                 err_str = str(e)
-                _safe_log(f"⚠️ Gemini [{model_name}]: {err_str[:300]}")
-                
-                # If quota exhausted or key invalid, don't try fallback
-                if any(marker in err_str for marker in ("429", "RESOURCE_EXHAUSTED", "401", "UNAUTHENTICATED")):
-                    _safe_log("⚠️ Gemini API key exhausted or invalid. Cannot proceed.")
-                    return {}
+                _safe_log(f"⚠️ Gemini error: {err_str[:200]}")
+        else:
+            _safe_log("⚠️ Gemini client unavailable")
     else:
-        _safe_log("⚠️ Gemini client unavailable")
-        return {}
-    
-    # Only fallback if Gemini was NOT quota-related
-    _safe_log(f"→ Falling back to Google Translator for {len(ja_dict)} regions...")
-    try:
-        from deep_translator import GoogleTranslator
-        translator = GoogleTranslator(source="ja", target="vi")
-        translated = {}
-        
-        for idx, key in enumerate(ja_dict, 1):
-            source_text = ja_dict[key].strip()
-            if not source_text:
-                continue
-            
-            try:
-                # Long delay to avoid rate limit
-                wait_time = 5 + (idx % 3)  # 5-7 seconds per request
-                _safe_log(f"  [{idx}/{len(ja_dict)}] Waiting {wait_time}s before translating...")
-                time.sleep(wait_time)
-                
-                value = translator.translate(source_text).strip()
-                if _valid_translation(value):
-                    translated[key] = value
-                    _safe_log(f"  ✓ ID {key}")
-            except Exception as e:
-                _safe_log(f"  ✗ ID {key}: {str(e)[:80]}")
-                # Continue to next even if this one fails
-        
-        _safe_log(f"✓ Google Translator completed: {len(translated)}/{len(ja_dict)} translated")
-        return translated
-    
-    except ImportError:
-        _safe_log("⚠️ deep-translator not installed")
-    except Exception as e:
-        _safe_log(f"⚠️ Fallback error: {e}")
-    
+        _safe_log("⚠️ No Gemini API key found")
+
+    _safe_log("❌ All translation providers failed")
     return {}
 
 
