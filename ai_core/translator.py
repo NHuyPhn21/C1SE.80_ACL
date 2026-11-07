@@ -85,11 +85,20 @@ def translate_batch_dict(
     if project_id and not api_key:
         try:
             from services.settings_service import SettingsService
-            api_key = SettingsService().load_api_key_for_pipeline(project_id)
-            if api_key:
+            db_key = SettingsService().load_api_key_for_pipeline(project_id)
+            if db_key:
+                api_key = db_key
                 _safe_log(f"✓ Loaded Gemini API key from database for project {project_id}")
+            else:
+                _safe_log(f"⚠️ No API key in DB for project {project_id}, trying .env fallback")
+                api_key = os.getenv("GEMINI_API_KEY", "").strip() or None
+                if api_key:
+                    _safe_log(f"✓ Using .env GEMINI_API_KEY (last 10 chars: ...{api_key[-10:]})")
         except Exception as e:
-            _safe_log(f"⚠️ Failed to load API key from DB: {e}")
+            _safe_log(f"⚠️ Failed to load API key from DB: {e}, trying .env fallback")
+            api_key = os.getenv("GEMINI_API_KEY", "").strip() or None
+            if api_key:
+                _safe_log(f"✓ Using .env GEMINI_API_KEY (last 10 chars: ...{api_key[-10:]})")
 
     prompt = (
         "You are a professional manga translator. Translate the following Japanese dialogue "
