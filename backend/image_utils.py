@@ -335,13 +335,6 @@ def render_translated_text_on_page(
         # BẢN ĐỒ CHỐNG VA CHẠM TOÀN TRANG (0 = vùng trống, 255 = vùng đã có chữ chiếm chỗ)
         occupied_mask = np.zeros((h_img, w_img), dtype=np.uint8)
 
-        # Cache bộ font từ size 8 đến 22 vào RAM
-        max_font = 22
-        font_cache = {
-            size: ImageFont.truetype(resolved_font, size)
-            for size in range(8, max_font + 1)
-        }
-
         raw_regions = db.query(TextRegion).filter(TextRegion.page_id == page_id).all()
         # Lọc sạch các bóng thoại bị trùng trong Database trước khi vẽ
         regions = _deduplicate_db_regions(raw_regions)
@@ -367,11 +360,17 @@ def render_translated_text_on_page(
             )
 
             text = region.translated_text.strip()
+            preferred_font_size = int(region.font_size or 24)
+            max_font_size = max(8, min(72, preferred_font_size))
+            font_cache = {
+                size: ImageFont.truetype(resolved_font, size)
+                for size in range(8, max_font_size + 1)
+            }
             best_font_size = 8
             best_lines = []
             best_line_spacing = 2
 
-            for size in range(max_font, 7, -1):
+            for size in range(max_font_size, 7, -1):
                 font = font_cache[size]
                 words = text.split()
                 lines = []
@@ -385,6 +384,16 @@ def render_translated_text_on_page(
                         if current_line:
                             lines.append(current_line)
                         current_line = word
+                        if draw.textlength(current_line, font=font) > box_width:
+                            characters = ""
+                            for character in word:
+                                candidate = characters + character
+                                if characters and draw.textlength(candidate, font=font) > box_width:
+                                    lines.append(characters)
+                                    characters = character
+                                else:
+                                    characters = candidate
+                            current_line = characters
                 if current_line:
                     lines.append(current_line)
 
