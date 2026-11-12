@@ -1,0 +1,8 @@
+path: E:/DatabaseFiles/CAPSTONE1_ACL/C1SE.80_ACL/manga_dataset
+train: images/train
+val: images/val
+
+nc: 2
+names:
+  0: panel
+  1: text_bubble

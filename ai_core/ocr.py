@@ -1,1 +1,0 @@
-"""Manga text recognition."""
