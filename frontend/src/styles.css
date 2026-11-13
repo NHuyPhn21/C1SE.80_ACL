@@ -151,3 +151,48 @@ input:focus, textarea:focus { border-color: #293879; }
 @media (max-width: 700px) { .settings-grid { grid-template-columns: 1fr; } }
 .new-pipeline { width: 100%; margin: 0 0 18px; padding: 11px; border: 0; border-radius: 17px; background: #293879; color: #fff; font-size: 14px; font-weight: 600; }.settings-tabs { display: flex; gap: 22px; margin-bottom: 15px; border-bottom: 1px solid #e0e3de; }.settings-tabs button { padding: 10px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #59636b; font-size: 14px; }.settings-tabs button.active { border-bottom-color: #293879; color: #293879; font-weight: 700; }.settings-section { padding: 0; }.settings-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }.settings-section-heading h2 { margin: 0; font-size: 20px; }.settings-section-heading p, .api-card p, .quota-card p { margin: 5px 0; color: #59636b; font-size: 14px; }.settings-section-heading > button:not(.create-project-button) { padding: 9px 12px; border: 1px solid #dfe3dd; border-radius: 14px; background: #fff; color: #555b61; font-size: 13px; }.api-card { max-width: 650px; }.api-card label { display: grid; gap: 6px; margin-top: 12px; color: #555b61; font-size: 14px; }.api-card select, .api-card input { padding: 10px; border: 1px solid #dfe3dd; border-radius: 8px; background: #fff; color: #263238; font-size: 14px; }.api-card small { color: #59636b; font-size: 12px; }.api-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }.api-actions button { padding: 9px 12px; border: 1px solid #293879; border-radius: 14px; background: #293879; color: #fff; font-size: 13px; }.api-actions button:disabled { opacity: .65; }.configured { color: #347951; font-size: 12px; }.missing { color: #b83a31; font-size: 12px; }.quota-card { max-width: 650px; margin-top: 15px; }.quota-line { display: flex; justify-content: space-between; gap: 10px; margin-top: 15px; color: #59636b; font-size: 14px; }.quota-track { height: 7px; margin-top: 7px; border-radius: 8px; background: #e7ebe7; }.quota-track i { display: block; height: 100%; border-radius: inherit; background: #293879; }.glossary-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }.glossary-form input, .glossary-form select { flex: 1; min-width: 150px; padding: 10px; border: 1px solid #dfe3dd; border-radius: 8px; background: #fff; color: #263238; font-size: 14px; }.glossary-list { border: 1px solid #e0e3de; border-radius: 9px; background: #fff; overflow: hidden; }.glossary-row { display: grid; grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr); gap: 10px; align-items: center; padding: 13px 15px; border-bottom: 1px solid #edf0ec; color: #555b61; font-size: 14px; }.glossary-row:last-child { border-bottom: 0; }.glossary-row b { color: #69737b; text-align: center; }.glossary-row strong { color: #293879; }.settings-terminal { min-height: 270px; padding: 15px; border-radius: 9px; background: #1c1d1b; color: #d3e2d4; font-family: monospace; font-size: 12px; line-height: 1.8; overflow: auto; }.settings-terminal > div { display: grid; grid-template-columns: 90px 75px minmax(0, 1fr); gap: 8px; }.settings-terminal time { color: #a4b1a6; }.settings-terminal b.info { color: #54bd82; }.settings-terminal b.warning { color: #e4ad55; }.settings-terminal b.error { color: #e36a61; }
 @media (max-width: 760px) { .auth-page { grid-template-columns: 1fr; } .auth-rail { min-height: 270px; padding: 25px; } .auth-promise { margin: 20px 0 0; padding: 0; } .auth-promise h1 { font-size: 27px; } .auth-promise ul, .auth-rail footer { display: none; } .auth-main { min-height: calc(100vh - 270px); padding-top: 55px; } .environment-pill { right: 20px; } .auth-build { right: 20px; bottom: 10px; } }
+
+/* Shared application controls and readable dashboard typography. */
+.app-icon { width: 1.1em; height: 1.1em; flex: 0 0 auto; vertical-align: -.15em; }
+.dashboard-nav button, .create-project-button, .back-projects, .new-pipeline { font-size: 14px; }
+.dashboard-nav button { display: flex; align-items: center; gap: 9px; }
+.dashboard-brand small, .dashboard-sidebar-bottom, .gpu-pill { font-size: 12px; }
+.dashboard-header { min-height: 56px; height: auto; font-size: 14px; }
+.dashboard-title p, .chapter-heading p, .project-modal > p { font-size: 14px; }
+.dashboard-error, .dashboard-empty p { font-size: 13px; }
+.project-card h3 { font-size: 20px; }
+.project-card-title span, .project-status, .progress-label { font-size: 12px; }
+.project-description { min-height: 36px; line-height: 1.5; }
+.project-card-actions { display: flex; align-items: center; gap: 9px; margin-top: 16px; padding-top: 13px; border-top: 1px solid #eceeea; }
+.project-open-button { flex: 1; padding: 9px 13px; border: 0; border-radius: 16px; background: #293879; color: #fff; font-size: 13px; font-weight: 700; }
+.project-actions-menu { position: relative; }
+.project-actions-menu summary { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #dfe3dd; border-radius: 50%; color: #293879; cursor: pointer; list-style: none; }
+.project-actions-menu summary::-webkit-details-marker { display: none; }
+.project-actions-menu > div { position: absolute; z-index: 10; right: 0; top: 40px; display: grid; min-width: 145px; padding: 6px; border: 1px solid #dfe3dd; border-radius: 9px; background: #fff; box-shadow: 0 10px 28px rgba(31, 39, 52, .16); }
+.project-actions-menu button { display: flex; align-items: center; gap: 8px; padding: 9px; border: 0; border-radius: 6px; background: transparent; color: #343a3d; font-size: 13px; text-align: left; }
+.project-actions-menu button:hover { background: #f0f2ed; }
+.project-search { display: flex; align-items: center; gap: 7px; width: 230px; padding: 0 10px; border-radius: 7px; background: #eef0ec; color: #69716d; }
+.dashboard-actions .project-search input { width: 100%; height: 34px; padding: 6px 0; border: 0; background: transparent; color: #343a3d; font-size: 13px; }
+.user-menu-popover { position: relative; }
+.user-menu-panel { position: absolute; z-index: 30; top: calc(100% + 9px); right: 0; display: grid; min-width: 220px; gap: 4px; padding: 14px; border: 1px solid #dfe3dd; border-radius: 10px; background: #fff; color: #252a32; box-shadow: 0 12px 32px rgba(31, 39, 52, .18); }
+.user-menu-panel strong { font-size: 14px; }
+.user-menu-panel small { margin: 0 0 8px; color: #777e80; font-size: 12px; overflow-wrap: anywhere; }
+.user-menu-panel button { display: flex; align-items: center; gap: 8px; padding: 9px; border: 0; border-radius: 7px; background: #f5f7f3; color: #a33b3b; font-size: 13px; }
+.invite-bar input { color: #343a3d; font-size: 14px; }
+.invite-bar select, .team-summary span, .team-summary small, .member-row, .member-identity small, .member-row > span, .member-row > small, .permission-grid b, .permission-grid p { font-size: 12px; }
+.kpi-card span, .kpi-card small, .dropzone small, .browse-button, .upload-list-heading, .upload-empty, .upload-row, .upload-row em, .language-cards > div, .language-cards select, .language-cards small, .pipeline-bar strong, .pipeline-bar small { font-size: 12px; }
+.queue-actions > button:first-child, .queue-hero strong, .queue-hero b, .queue-complete p, .stage-line, .queue-matrix-head span, .queue-row, .queue-row strong, .queue-row em, .queue-log { font-size: 12px; }
+.settings-card h2 { font-size: 20px; }
+
+.settings-card label, .settings-card input, .provider-row, .settings-tabs button, .settings-section-heading p, .api-card p, .quota-card p, .api-card label, .api-card select, .api-card input, .quota-line, .glossary-form input, .glossary-form select, .glossary-row { font-size: 14px; }.settings-card small, .settings-card p, .provider-row b, .api-card small, .configured, .missing, .settings-terminal { font-size: 12px; }.settings-note, .api-actions button { font-size: 13px; }
+
+.delete-bubble-button, .ocr-panel-title button { display: inline-flex; align-items: center; gap: 5px; }
+
+@media (max-width: 850px) {
+  .dashboard-page { display: block; }
+  .dashboard-sidebar { position: static; width: 100%; padding: 12px; border-right: 0; border-bottom: 1px solid #e6e8e3; }
+  .dashboard-sidebar-bottom { display: none; }
+  .dashboard-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-header { padding: 10px 14px; }
+  .project-search { display: none; }
+}
