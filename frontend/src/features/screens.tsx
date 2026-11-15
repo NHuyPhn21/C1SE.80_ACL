@@ -1,11 +1,13 @@
 import { FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clearSettingsLogs,
   createBubble,
   createChapter,
   createGlossary,
   createProject,
   deleteBubble,
   deleteChapter,
+  deleteGlossary,
   deleteProjectData,
   getChapter,
   getGlossary,
@@ -17,6 +19,7 @@ import {
   getSettingsLogs,
   inviteProjectMember,
   removeProjectMember,
+  updateGlossary,
   updateProjectMemberRole,
   rerunPageOcr,
   restoreBubble,
@@ -1396,7 +1399,7 @@ export function ChapterScreen({
     setBusy(true);
     setError("");
     try {
-      await deleteChapter(project.id, chapter.id);
+      await deleteChapter(project.id, chapter.id, session.user.id);
       setChapter(null);
       setMessage("Old chapter deleted. Upload new pages to create a clean chapter.");
     } catch (requestError) {
@@ -1416,7 +1419,7 @@ export function ChapterScreen({
     setBusy(true);
     setError("");
     try {
-      await deleteProjectData(project.id);
+      await deleteProjectData(project.id, session.user.id);
       setChapter(null);
       setMessage("All old project data was deleted. Upload new pages to start clean.");
     } catch (requestError) {
@@ -1579,8 +1582,13 @@ export function TeamScreen({
     setBusy(true);
     setError("");
     try {
-      const member = await inviteProjectMember(project.id, email, role);
-      setMembers((current) => [...current, member]);
+      const member = await inviteProjectMember(project.id, email, role, session.user.id);
+      setMembers((current) => {
+        const exists = current.some((item) => item.user_id === member.user_id);
+        return exists
+          ? current.map((item) => (item.user_id === member.user_id ? member : item))
+          : [...current, member];
+      });
       setEmail("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to invite member.");
@@ -1590,6 +1598,7 @@ export function TeamScreen({
   };
 
   const handleRoleChange = async (memberUserId: number, newRole: string) => {
+    setError("");
     try {
       const updated = await updateProjectMemberRole(project.id, memberUserId, newRole, session.user.id);
       setMembers((current) => current.map((m) => (m.user_id === memberUserId ? updated : m)));
@@ -1600,6 +1609,7 @@ export function TeamScreen({
 
   const handleRemoveMember = async (memberUserId: number, memberName: string) => {
     if (!window.confirm(`Are you sure you want to remove member "${memberName}" from the project?`)) return;
+    setError("");
     try {
       await removeProjectMember(project.id, memberUserId, session.user.id);
       setMembers((current) => current.filter((m) => m.user_id !== memberUserId));
@@ -1628,13 +1638,15 @@ export function TeamScreen({
               Assign roles and permissions for project: <strong>{project.title}</strong>
             </p>
           </div>
-          <button
-            className="create-project-button"
-            type="button"
-            onClick={() => emailInputRef.current?.focus()}
-          >
-            <AppIcon name="users" /> Invite Member
-          </button>
+          {isCurrentUserAdmin && (
+            <button
+              className="create-project-button"
+              type="button"
+              onClick={() => emailInputRef.current?.focus()}
+            >
+              <AppIcon name="users" /> Invite Member
+            </button>
+          )}
         </div>
 
         <div className="team-summary">
@@ -1655,25 +1667,27 @@ export function TeamScreen({
           </div>
         </div>
 
-        <form className="invite-bar" onSubmit={(event) => void invite(event)}>
-          <AppIcon name="mail" />
-          <input
-            ref={emailInputRef}
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="colleague@studio.com"
-            type="email"
-            required
-          />
-          <select value={role} onChange={(event) => setRole(event.target.value)}>
-            <option>Translator</option>
-            <option>Typesetter</option>
-            <option>Project Manager</option>
-          </select>
-          <button className="create-project-button" disabled={busy}>
-            {busy ? "Sending..." : "Send Invite"}
-          </button>
-        </form>
+        {isCurrentUserAdmin && (
+          <form className="invite-bar" onSubmit={(event) => void invite(event)}>
+            <AppIcon name="mail" />
+            <input
+              ref={emailInputRef}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="colleague@studio.com"
+              type="email"
+              required
+            />
+            <select value={role} onChange={(event) => setRole(event.target.value)}>
+              <option>Translator</option>
+              <option>Typesetter</option>
+              <option>Project Manager</option>
+            </select>
+            <button className="create-project-button" disabled={busy}>
+              {busy ? "Sending..." : "Send Invite"}
+            </button>
+          </form>
+        )}
 
         {error && <div className="dashboard-error">{error}</div>}
 
@@ -1689,48 +1703,54 @@ export function TeamScreen({
             <div className="dashboard-empty">No registered collaborators yet.</div>
           ) : (
             <div className="member-list">
-              {members.map((member) => (
-                <div className="member-row" key={member.user_id}>
-                  <div className="member-identity">
-                    <span>{member.name.slice(0, 2).toUpperCase()}</span>
+              {members.map((member) => {
+                const isSelf = String(member.user_id) === String(session.user.id);
+                const canManageRow = isCurrentUserAdmin && !member.is_owner && !isSelf;
+                return (
+                  <div className="member-row" key={member.user_id}>
+                    <div className="member-identity">
+                      <span>{member.name.slice(0, 2).toUpperCase()}</span>
+                      <div>
+                        <strong>{member.name}</strong>
+                        <small>{member.email}</small>
+                      </div>
+                    </div>
+                    {member.is_owner ? (
+                      <b className="role-owner">Owner</b>
+                    ) : canManageRow ? (
+                      <select
+                        className="member-role-select"
+                        value={member.role}
+                        onChange={(e) => void handleRoleChange(member.user_id, e.target.value)}
+                        aria-label={`Role for ${member.name}`}
+                      >
+                        <option value="Translator">Translator</option>
+                        <option value="Typesetter">Typesetter</option>
+                        <option value="Project Manager">Project Manager</option>
+                      </select>
+                    ) : (
+                      <b className={`role-${member.role.toLowerCase().replace(" ", "-")}`}>
+                        {member.role}
+                      </b>
+                    )}
+                    <span>{member.is_owner ? "Overall Supervision" : "Assigned project tasks"}</span>
                     <div>
-                      <strong>{member.name}</strong>
-                      <small>{member.email}</small>
+                      {member.is_owner ? (
+                        <small>Owner</small>
+                      ) : canManageRow ? (
+                        <button
+                          type="button"
+                          className="delete-bubble-button"
+                          onClick={() => void handleRemoveMember(member.user_id, member.name)}
+                          title="Remove member"
+                        >
+                          <AppIcon name="trash" /> Remove
+                        </button>
+                      ) : null}
                     </div>
                   </div>
-                  {member.is_owner ? (
-                    <b className="role-owner">Owner</b>
-                  ) : isCurrentUserAdmin ? (
-                    <select
-                      style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #ccc" }}
-                      value={member.role}
-                      onChange={(e) => void handleRoleChange(member.user_id, e.target.value)}
-                      aria-label={`Role for ${member.name}`}
-                    >
-                      <option value="Translator">Translator</option>
-                      <option value="Typesetter">Typesetter</option>
-                      <option value="Project Manager">Project Manager</option>
-                    </select>
-                  ) : (
-                    <b className={`role-${member.role.toLowerCase().replace(" ", "-")}`}>{member.role}</b>
-                  )}
-                  <span>{member.is_owner ? "Overall Supervision" : "Assigned project tasks"}</span>
-                  <div>
-                    {member.is_owner ? (
-                      <small>Owner</small>
-                    ) : isCurrentUserAdmin ? (
-                      <button
-                        type="button"
-                        className="delete-bubble-button"
-                        onClick={() => void handleRemoveMember(member.user_id, member.name)}
-                        title="Remove member"
-                      >
-                        <AppIcon name="trash" /> Remove
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1787,18 +1807,31 @@ export function SettingsScreen({
   const [sourceTerm, setSourceTerm] = useState("");
   const [targetTerm, setTargetTerm] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [glossaryFilterProject, setGlossaryFilterProject] = useState<string>("all");
+  const [glossarySearch, setGlossarySearch] = useState("");
+  const [editingGlossaryId, setEditingGlossaryId] = useState<number | null>(null);
+  const [editSource, setEditSource] = useState("");
+  const [editTarget, setEditTarget] = useState("");
+  const [logFilterProject, setLogFilterProject] = useState<string>("all");
+  const [logFilterLevel, setLogFilterLevel] = useState<string>("ALL");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const refreshSettings = async () => {
+    try {
+      setSettings(await getSettings(session.user.id));
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error ? requestError.message : "Unable to load settings.",
+      );
+    }
+  };
 
   useEffect(() => {
-    void getSettings(session.user.id)
-      .then(setSettings)
-      .catch((requestError) =>
-        setError(
-          requestError instanceof Error ? requestError.message : "Unable to load settings.",
-        ),
-      );
+    void refreshSettings();
   }, [session.user.id]);
 
   useEffect(() => {
@@ -1808,34 +1841,142 @@ export function SettingsScreen({
         if (!activeProject && loaded[0]) {
           onSyncProject(loaded[0]);
         }
+        if (!projectId && loaded[0]) {
+          setProjectId(String(loaded[0].id));
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Unable to load projects."));
   }, [session.user.id]);
 
   useEffect(() => {
-    if (tab === "glossary") {
-      void getGlossary(session.user.id)
-        .then(setGlossary)
-        .catch((e) => setError(e instanceof Error ? e.message : "Unable to load glossary."));
-    }
+    void getGlossary(session.user.id)
+      .then(setGlossary)
+      .catch((e) => setError(e instanceof Error ? e.message : "Unable to load glossary."));
+  }, [session.user.id]);
+
+  useEffect(() => {
     if (tab === "logs") {
-      void getSettingsLogs(session.user.id)
+      void getSettingsLogs(
+        session.user.id,
+        logFilterProject !== "all" ? Number(logFilterProject) : undefined,
+        logFilterLevel,
+      )
         .then(setLogs)
         .catch((e) => setError(e instanceof Error ? e.message : "Unable to load logs."));
     }
-  }, [tab, session.user.id]);
+  }, [tab, session.user.id, logFilterProject, logFilterLevel]);
+
+  const projectMap = useMemo(() => {
+    const map = new Map<number, string>();
+    projects.forEach((p) => map.set(p.id, p.title));
+    return map;
+  }, [projects]);
+
+  const filteredGlossary = useMemo(() => {
+    const query = glossarySearch.trim().toLowerCase();
+    return glossary.filter((item) => {
+      if (glossaryFilterProject !== "all" && String(item.project_id) !== glossaryFilterProject) {
+        return false;
+      }
+      if (!query) return true;
+      return (
+        item.source_term.toLowerCase().includes(query) ||
+        item.target_term.toLowerCase().includes(query)
+      );
+    });
+  }, [glossary, glossaryFilterProject, glossarySearch]);
 
   const addTerm = async (event: FormEvent) => {
     event.preventDefault();
     if (!projectId) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
     try {
       const item = await createGlossary(session.user.id, Number(projectId), sourceTerm, targetTerm);
       setGlossary((items) => [item, ...items]);
       setSourceTerm("");
       setTargetTerm("");
       setShowAdd(false);
+      setMessage("Glossary term added.");
+      void refreshSettings();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save glossary term.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEditGlossary = (item: GlossaryTerm) => {
+    setEditingGlossaryId(item.id);
+    setEditSource(item.source_term);
+    setEditTarget(item.target_term);
+    setError("");
+    setMessage("");
+  };
+
+  const saveEditGlossary = async (glossaryId: number) => {
+    if (!editSource.trim() || !editTarget.trim()) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const updated = await updateGlossary(
+        session.user.id,
+        glossaryId,
+        editSource.trim(),
+        editTarget.trim(),
+      );
+      setGlossary((current) => current.map((item) => (item.id === glossaryId ? updated : item)));
+      setEditingGlossaryId(null);
+      setMessage("Glossary term updated.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to update glossary term.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteGlossary = async (item: GlossaryTerm) => {
+    if (!window.confirm(`Delete glossary term "${item.source_term} → ${item.target_term}"?`)) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await deleteGlossary(session.user.id, item.id);
+      setGlossary((current) => current.filter((row) => row.id !== item.id));
+      if (editingGlossaryId === item.id) {
+        setEditingGlossaryId(null);
+      }
+      setMessage("Glossary term deleted.");
+      void refreshSettings();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to delete glossary term.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClearLogs = async () => {
+    const scopeLabel =
+      logFilterProject === "all"
+        ? "all accessible projects"
+        : projectMap.get(Number(logFilterProject)) || "this project";
+    if (!window.confirm(`Permanently clear system logs for ${scopeLabel}?`)) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await clearSettingsLogs(
+        session.user.id,
+        logFilterProject !== "all" ? Number(logFilterProject) : undefined,
+      );
+      setLogs([]);
+      setMessage(result.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to clear system logs.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1860,21 +2001,40 @@ export function SettingsScreen({
         </div>
 
         <div className="settings-tabs">
-          <button className={tab === "api" ? "active" : ""} onClick={() => setTab("api")}>
+          <button
+            className={tab === "api" ? "active" : ""}
+            onClick={() => {
+              setTab("api");
+              setMessage("");
+              setError("");
+            }}
+          >
             API Key Config
           </button>
           <button
             className={tab === "glossary" ? "active" : ""}
-            onClick={() => setTab("glossary")}
+            onClick={() => {
+              setTab("glossary");
+              setMessage("");
+              setError("");
+            }}
           >
             Custom Glossary {glossary.length ? `(${glossary.length})` : ""}
           </button>
-          <button className={tab === "logs" ? "active" : ""} onClick={() => setTab("logs")}>
-            System Logs {logs.length ? "•" : ""}
+          <button
+            className={tab === "logs" ? "active" : ""}
+            onClick={() => {
+              setTab("logs");
+              setMessage("");
+              setError("");
+            }}
+          >
+            System Logs {logs.length ? `(${logs.length})` : ""}
           </button>
         </div>
 
         {error && <div className="dashboard-error">{error}</div>}
+        {message && <div className="typesetting-message">{message}</div>}
 
         {!settings ? (
           <div className="dashboard-empty">Loading settings...</div>
@@ -1885,12 +2045,16 @@ export function SettingsScreen({
             <div className="settings-section-heading">
               <div>
                 <h2>Custom glossary</h2>
-                <p>Enforced in every translation pass.</p>
+                <p>Enforced in every translation pass across your manga projects.</p>
               </div>
-              <button className="create-project-button" onClick={() => setShowAdd(true)}>
-                ＋ Add term
+              <button
+                className="create-project-button"
+                onClick={() => setShowAdd((prev) => !prev)}
+              >
+                {showAdd ? "✕ Cancel" : "＋ Add term"}
               </button>
             </div>
+
             {showAdd && (
               <form className="glossary-form" onSubmit={(event) => void addTerm(event)}>
                 <select
@@ -1908,30 +2072,120 @@ export function SettingsScreen({
                 <input
                   value={sourceTerm}
                   onChange={(event) => setSourceTerm(event.target.value)}
-                  placeholder="Source term"
+                  placeholder="Source term (e.g. 先生)"
                   required
                 />
                 <input
                   value={targetTerm}
                   onChange={(event) => setTargetTerm(event.target.value)}
-                  placeholder="Localized term"
+                  placeholder="Vietnamese term (e.g. Tiên sinh)"
                   required
                 />
-                <button className="create-project-button">Save term</button>
+                <button className="create-project-button" disabled={busy}>
+                  {busy ? "Saving..." : "Save term"}
+                </button>
               </form>
             )}
-            {glossary.length ? (
-              <div className="glossary-list">
-                {glossary.map((item) => (
-                  <div className="glossary-row" key={item.id}>
-                    <span>{item.source_term}</span>
-                    <b>→</b>
-                    <strong>{item.target_term}</strong>
-                  </div>
+
+            <div className="glossary-filter-bar">
+              <div className="glossary-search-box">
+                <AppIcon name="search" />
+                <input
+                  value={glossarySearch}
+                  onChange={(event) => setGlossarySearch(event.target.value)}
+                  placeholder="Search source or localized term..."
+                />
+              </div>
+              <select
+                value={glossaryFilterProject}
+                onChange={(event) => setGlossaryFilterProject(event.target.value)}
+                aria-label="Filter glossary by project"
+              >
+                <option value="all">All Projects ({glossary.length})</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={String(project.id)}>
+                    {project.title}
+                  </option>
                 ))}
+              </select>
+            </div>
+
+            {filteredGlossary.length ? (
+              <div className="glossary-list">
+                {filteredGlossary.map((item) => {
+                  const isEditing = editingGlossaryId === item.id;
+                  const projTitle =
+                    item.project_title || projectMap.get(item.project_id) || `Project #${item.project_id}`;
+                  return (
+                    <div className="glossary-row" key={item.id}>
+                      <span className="glossary-project-chip">{projTitle}</span>
+                      {isEditing ? (
+                        <>
+                          <input
+                            className="glossary-inline-input"
+                            value={editSource}
+                            onChange={(e) => setEditSource(e.target.value)}
+                            placeholder="Source term"
+                          />
+                          <b>→</b>
+                          <input
+                            className="glossary-inline-input"
+                            value={editTarget}
+                            onChange={(e) => setEditTarget(e.target.value)}
+                            placeholder="Localized term"
+                          />
+                          <div className="glossary-row-actions">
+                            <button
+                              type="button"
+                              className="glossary-action-btn save"
+                              disabled={busy || !editSource.trim() || !editTarget.trim()}
+                              onClick={() => void saveEditGlossary(item.id)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className="glossary-action-btn"
+                              onClick={() => setEditingGlossaryId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <span className="glossary-source-term">{item.source_term}</span>
+                          <b>→</b>
+                          <strong className="glossary-target-term">{item.target_term}</strong>
+                          <div className="glossary-row-actions">
+                            <button
+                              type="button"
+                              className="glossary-action-btn"
+                              onClick={() => startEditGlossary(item)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="delete-bubble-button"
+                              disabled={busy}
+                              onClick={() => void handleDeleteGlossary(item)}
+                            >
+                              <AppIcon name="trash" /> Delete
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <div className="dashboard-empty">No glossary terms configured.</div>
+              <div className="dashboard-empty">
+                {glossary.length
+                  ? "No glossary terms match your current search or project filter."
+                  : "No glossary terms configured yet."}
+              </div>
             )}
           </div>
         ) : (
@@ -1939,9 +2193,40 @@ export function SettingsScreen({
             <div className="settings-section-heading">
               <div>
                 <h2>System logs</h2>
-                <p>Errors and warnings from queue jobs and pipeline workers.</p>
+                <p>Errors, warnings and pipeline execution events persisted in SQLite.</p>
               </div>
-              <button onClick={() => setLogs([])}>Clear view</button>
+              <div className="logs-toolbar-actions">
+                <select
+                  value={logFilterProject}
+                  onChange={(e) => setLogFilterProject(e.target.value)}
+                  aria-label="Filter logs by project"
+                >
+                  <option value="all">All Projects</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={String(project.id)}>
+                      {project.title}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={logFilterLevel}
+                  onChange={(e) => setLogFilterLevel(e.target.value)}
+                  aria-label="Filter logs by level"
+                >
+                  <option value="ALL">All Levels</option>
+                  <option value="INFO">INFO</option>
+                  <option value="WARNING">WARNING</option>
+                  <option value="ERROR">ERROR</option>
+                </select>
+                <button
+                  type="button"
+                  className="danger-button"
+                  disabled={busy || logs.length === 0}
+                  onClick={() => void handleClearLogs()}
+                >
+                  <AppIcon name="trash" /> Clear logs
+                </button>
+              </div>
             </div>
             <div className="settings-terminal">
               {logs.length ? (
@@ -1951,7 +2236,10 @@ export function SettingsScreen({
                       {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "--:--:--"}
                     </time>
                     <b className={log.level.toLowerCase()}>{log.level}</b>
-                    <span>{log.message}</span>
+                    <span>
+                      {log.project_title ? `[${log.project_title}] ` : ""}
+                      {log.message}
+                    </span>
                   </div>
                 ))
               ) : (
@@ -2015,6 +2303,15 @@ export function ApiSettings({
     }
   };
 
+  const quota = settings.quota_usage ?? {
+    requests_this_month: 0,
+    monthly_limit: 500,
+    usage_percent: 0,
+    translated_bubbles: 0,
+    completed_pages: 0,
+    glossary_terms: 0,
+  };
+
   return (
     <>
       <div className="settings-card api-card">
@@ -2074,15 +2371,33 @@ export function ApiSettings({
 
       <div className="settings-card quota-card">
         <h2>Quota &amp; usage</h2>
-        <p>Current billing cycle token consumption across all chapter batches.</p>
+        <p>Current billing cycle consumption across all accessible projects and chapter batches.</p>
         <div className="quota-line">
-          <span>Requests this month</span>
-          <b>—</b>
+          <span>Requests &amp; bubbles processed</span>
+          <b>
+            {quota.requests_this_month} / {quota.monthly_limit} ({quota.usage_percent}%)
+          </b>
         </div>
         <div className="quota-track">
-          <i style={{ width: "0%" }} />
+          <i style={{ width: `${quota.usage_percent}%` }} />
         </div>
-        <small>No usage data available.</small>
+        <div className="quota-metrics-grid">
+          <div>
+            <span>Translated Bubbles</span>
+            <strong>{quota.translated_bubbles}</strong>
+          </div>
+          <div>
+            <span>Completed Pages</span>
+            <strong>{quota.completed_pages}</strong>
+          </div>
+          <div>
+            <span>Glossary Terms</span>
+            <strong>{quota.glossary_terms}</strong>
+          </div>
+        </div>
+        <small>
+          Calculated live from SQLite translation regions, completed pages and pipeline tasks.
+        </small>
       </div>
     </>
   );
