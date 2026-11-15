@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal, init_db
@@ -20,6 +21,7 @@ from backend.schemas import (
     ChapterCreateRequest,
     ForgotPasswordRequest,
     GlossaryCreateRequest,
+    GlossaryUpdateRequest,
     LoginRequest,
     ProjectCreateRequest,
     QueueStartRequest,
@@ -38,7 +40,7 @@ from services.workspace_service import WorkspaceService, WorkspaceServiceError
 from services.team_service import TeamService, TeamServiceError
 from services.queue_service import QueueService, build_rendered_zip
 from services.typesetting_service import TypesettingServiceError, save_translation_and_render
-from services.settings_service import SettingsService
+from services.settings_service import SettingsService, SettingsServiceError
 from backend.queue_worker import submit_pipeline_task
 
 
@@ -258,8 +260,11 @@ def list_project_members(project_id: int) -> list[dict]:
 
 
 @router.post("/projects/{project_id}/members")
-def invite_project_member(project_id: int, request: TeamInviteRequest) -> dict:
+def invite_project_member(
+    project_id: int, request: TeamInviteRequest, caller_user_id: int | None = None
+) -> dict:
     try:
+        _check_project_role(project_id, caller_user_id, ("Owner", "Project Manager"))
         member = TeamService().invite_member(project_id, request.email, request.role)
         return {
             "user_id": member.user_id,
@@ -327,6 +332,23 @@ def create_chapter(project_id: int, request: ChapterCreateRequest) -> dict:
         db.close()
 
 
+def _accessible_project_ids(db: Session, user_id: int) -> list[int]:
+    member_project_ids = db.query(ProjectMembership.project_id).filter(
+        ProjectMembership.user_id == user_id
+    )
+    rows = (
+        db.query(Project.id)
+        .filter(
+            or_(
+                Project.owner_id == user_id,
+                Project.id.in_(member_project_ids),
+            )
+        )
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
 @router.get("/settings")
 def get_settings(user_id: int) -> dict:
     db = SessionLocal()
@@ -334,6 +356,19 @@ def get_settings(user_id: int) -> dict:
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
+        accessible_ids = _accessible_project_ids(db, user_id)
+        has_gemini = False
+        if accessible_ids:
+            has_gemini = (
+                db.query(ApiKeyConfig)
+                .filter(
+                    ApiKeyConfig.project_id.in_(accessible_ids),
+                    ApiKeyConfig.provider == "gemini",
+                    ApiKeyConfig.is_active.is_(True),
+                )
+                .first()
+                is not None
+            )
         return {
             "user": {
                 "id": user.id,
@@ -343,13 +378,10 @@ def get_settings(user_id: int) -> dict:
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             },
             "providers": {
-                "gemini": db.query(ApiKeyConfig).join(Project).filter(
-                    Project.owner_id == user_id,
-                    ApiKeyConfig.provider == "gemini",
-                    ApiKeyConfig.is_active.is_(True),
-                ).first() is not None,
+                "gemini": has_gemini,
                 "sendgrid": bool(os.getenv("SENDGRID_API_KEY") and os.getenv("SENDGRID_FROM_EMAIL")),
             },
+            "quota_usage": SettingsService().get_quota_usage(user_id),
         }
     finally:
         db.close()
@@ -400,11 +432,8 @@ def test_settings_api_key(request: ApiKeyRequest) -> dict[str, str]:
 def test_saved_settings_api_key(user_id: int, project_id: int) -> dict[str, str]:
     db = SessionLocal()
     try:
-        project = db.query(Project).filter(
-            Project.id == project_id,
-            Project.owner_id == user_id,
-        ).first()
-        if project is None:
+        accessible_ids = _accessible_project_ids(db, user_id)
+        if project_id not in accessible_ids:
             raise HTTPException(status_code=404, detail="Project not found")
         api_key = SettingsService().load_api_key_for_pipeline(project_id)
         if not api_key:
@@ -415,56 +444,166 @@ def test_saved_settings_api_key(user_id: int, project_id: int) -> dict[str, str]
 
 
 @router.get("/settings/glossary")
-def get_glossary(user_id: int) -> list[dict]:
+def get_glossary(user_id: int, project_id: int | None = None) -> list[dict]:
     db = SessionLocal()
     try:
-        rows = (
-            db.query(CustomGlossary)
+        accessible_ids = _accessible_project_ids(db, user_id)
+        if not accessible_ids:
+            return []
+        query = (
+            db.query(CustomGlossary, Project.title)
             .join(Project, CustomGlossary.project_id == Project.id)
-            .filter(Project.owner_id == user_id)
-            .order_by(CustomGlossary.created_at.desc())
-            .all()
+            .filter(CustomGlossary.project_id.in_(accessible_ids))
         )
-        return [{"id": row.id, "project_id": row.project_id, "source_term": row.source_term, "target_term": row.target_term} for row in rows]
+        if project_id is not None:
+            query = query.filter(CustomGlossary.project_id == project_id)
+        rows = query.order_by(CustomGlossary.created_at.desc(), CustomGlossary.id.desc()).all()
+        return [
+            {
+                "id": glossary.id,
+                "project_id": glossary.project_id,
+                "project_title": project_title,
+                "source_term": glossary.source_term,
+                "target_term": glossary.target_term,
+            }
+            for glossary, project_title in rows
+        ]
     finally:
         db.close()
 
 
 @router.get("/settings/logs")
-def get_settings_logs(user_id: int) -> list[dict]:
+def get_settings_logs(
+    user_id: int,
+    project_id: int | None = None,
+    level: str | None = None,
+) -> list[dict]:
     db = SessionLocal()
     try:
-        rows = (
-            db.query(SystemLog)
+        accessible_ids = _accessible_project_ids(db, user_id)
+        if not accessible_ids:
+            return []
+        query = (
+            db.query(SystemLog, Project.id, Project.title)
             .join(QueueTask, SystemLog.task_id == QueueTask.id)
             .join(Chapter, QueueTask.chapter_id == Chapter.id)
             .join(Project, Chapter.project_id == Project.id)
-            .filter(Project.owner_id == user_id)
-            .order_by(SystemLog.timestamp.desc())
-            .limit(200)
-            .all()
+            .filter(Project.id.in_(accessible_ids))
         )
-        return [{"id": row.id, "level": row.level, "message": row.message, "timestamp": row.timestamp.isoformat() if row.timestamp else None} for row in rows]
+        if project_id is not None:
+            query = query.filter(Project.id == project_id)
+        if level and level.strip().upper() != "ALL":
+            query = query.filter(SystemLog.level == level.strip().upper())
+        rows = query.order_by(SystemLog.timestamp.desc(), SystemLog.id.desc()).limit(200).all()
+        return [
+            {
+                "id": log.id,
+                "project_id": proj_id,
+                "project_title": proj_title,
+                "level": log.level,
+                "message": log.message,
+                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            }
+            for log, proj_id, proj_title in rows
+        ]
     finally:
         db.close()
+
+
+@router.delete("/settings/logs")
+def clear_settings_logs(user_id: int, project_id: int | None = None) -> dict:
+    if project_id is not None:
+        _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
+    deleted_count = SettingsService().clear_logs(user_id, project_id)
+    return {
+        "deleted_count": deleted_count,
+        "message": f"Cleared {deleted_count} system log entries.",
+    }
 
 
 @router.post("/settings/glossary")
 def create_glossary(user_id: int, request: GlossaryCreateRequest) -> dict:
+    _check_project_role(request.project_id, user_id, ("Owner", "Project Manager", "Translator"))
     db = SessionLocal()
     try:
-        project = db.query(Project).filter(Project.id == request.project_id, Project.owner_id == user_id).first()
+        project = db.query(Project).filter(Project.id == request.project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        if not request.source_term.strip() or not request.target_term.strip():
-            raise HTTPException(status_code=400, detail="Both glossary terms are required")
-        row = CustomGlossary(project_id=project.id, source_term=request.source_term.strip(), target_term=request.target_term.strip())
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-        return {"id": row.id, "project_id": row.project_id, "source_term": row.source_term, "target_term": row.target_term}
+        project_title = project.title
     finally:
         db.close()
+
+    try:
+        entry = SettingsService().create_glossary(
+            request.project_id, request.source_term, request.target_term
+        )
+    except SettingsServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "id": entry.id,
+        "project_id": request.project_id,
+        "project_title": project_title,
+        "source_term": entry.source_term,
+        "target_term": entry.target_term,
+    }
+
+
+@router.put("/settings/glossary/{glossary_id}")
+def update_glossary_entry(
+    glossary_id: int,
+    user_id: int,
+    request: GlossaryUpdateRequest,
+) -> dict:
+    db = SessionLocal()
+    try:
+        row = db.query(CustomGlossary).filter(CustomGlossary.id == glossary_id).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Glossary entry not found")
+        project_id = row.project_id
+        project = db.query(Project).filter(Project.id == project_id).first()
+        project_title = project.title if project else ""
+    finally:
+        db.close()
+
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager", "Translator"))
+    try:
+        updated = SettingsService().update_glossary(
+            glossary_id, request.source_term, request.target_term
+        )
+    except SettingsServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "id": updated.id,
+        "project_id": project_id,
+        "project_title": project_title,
+        "source_term": updated.source_term,
+        "target_term": updated.target_term,
+    }
+
+
+@router.delete("/settings/glossary/{glossary_id}")
+def delete_glossary_entry(glossary_id: int, user_id: int) -> dict:
+    db = SessionLocal()
+    try:
+        row = db.query(CustomGlossary).filter(CustomGlossary.id == glossary_id).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Glossary entry not found")
+        project_id = row.project_id
+    finally:
+        db.close()
+
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager", "Translator"))
+    try:
+        SettingsService().delete_glossary(glossary_id)
+    except SettingsServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "deleted_id": glossary_id,
+        "message": "Glossary entry deleted.",
+    }
 
 
 @router.get("/projects/{project_id}/chapters")
@@ -539,7 +678,8 @@ def delete_project_chapter(project_id: int, chapter_id: int, user_id: int | None
 
 
 @router.delete("/projects/{project_id}/data")
-def delete_project_data(project_id: int) -> dict[str, int | str]:
+def delete_project_data(project_id: int, user_id: int | None = None) -> dict[str, int | str]:
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
     db = SessionLocal()
     try:
         project = db.query(Project).filter(Project.id == project_id).first()

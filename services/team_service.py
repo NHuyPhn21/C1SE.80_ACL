@@ -12,6 +12,9 @@ class TeamServiceError(RuntimeError):
     pass
 
 
+VALID_PROJECT_ROLES = {"Translator", "Typesetter", "Project Manager"}
+
+
 @dataclass(frozen=True)
 class TeamMember:
     user_id: int
@@ -93,6 +96,9 @@ class TeamService:
         normalized_email = email.strip().lower()
         if "@" not in normalized_email:
             raise TeamServiceError("Please enter a valid email address.")
+        clean_role = role.strip()
+        if clean_role not in VALID_PROJECT_ROLES:
+            raise TeamServiceError(f"Invalid role '{role}'. Allowed roles: {', '.join(sorted(VALID_PROJECT_ROLES))}.")
 
         db = self.session_factory()
         try:
@@ -119,11 +125,11 @@ class TeamService:
                 membership = ProjectMembership(
                     project_id=project_id,
                     user_id=invited_user.id,
-                    project_role=role,
+                    project_role=clean_role,
                 )
                 db.add(membership)
             else:
-                membership.project_role = role
+                membership.project_role = clean_role
             db.commit()
             return TeamMember(
                 user_id=invited_user.id,
@@ -164,6 +170,9 @@ class TeamService:
             db.close()
 
     def update_member_role(self, project_id: int, user_id: int, role: str) -> TeamMember:
+        clean_role = role.strip()
+        if clean_role not in VALID_PROJECT_ROLES:
+            raise TeamServiceError(f"Invalid role '{role}'. Allowed roles: {', '.join(sorted(VALID_PROJECT_ROLES))}.")
         db = self.session_factory()
         try:
             project = db.query(Project).filter(Project.id == project_id).first()
@@ -181,7 +190,7 @@ class TeamService:
             )
             if membership is None:
                 raise TeamServiceError("Project membership not found.")
-            membership.project_role = role
+            membership.project_role = clean_role
             db.commit()
             return TeamMember(
                 user_id=membership.user.id,

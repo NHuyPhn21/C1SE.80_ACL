@@ -44,6 +44,11 @@ class GlossaryCreateRequest(BaseModel):
     target_term: str
 
 
+class GlossaryUpdateRequest(BaseModel):
+    source_term: str
+    target_term: str
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str

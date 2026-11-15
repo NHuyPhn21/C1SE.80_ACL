@@ -123,6 +123,12 @@ class SqliteAuthAndTeamTests(unittest.TestCase):
         with self.assertRaises(TeamServiceError):
             self.team.update_member_role(project.id, int(owner.user.id), "Typesetter")
 
+        # Reject invalid roles
+        with self.assertRaises(TeamServiceError):
+            self.team.update_member_role(project.id, int(member.user.id), "Owner")
+        with self.assertRaises(TeamServiceError):
+            self.team.invite_member(project.id, member.user.email, "SuperAdmin")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -36,6 +36,11 @@ def get_ai_models(yolo_weight_path: str = DEFAULT_YOLO_WEIGHTS):
     """Chỉ tải YOLO và MangaOCR vào RAM/GPU đúng 1 lần duy nhất trong suốt phiên chạy."""
     global _YOLO_MODEL, _MOCR_MODEL
 
+    if YOLO is None or MangaOcr is None:
+        raise RuntimeError(
+            "Thiếu thư viện AI ('ultralytics' hoặc 'manga-ocr'). Vui lòng cài đặt đầy đủ trước khi chạy pipeline OCR."
+        )
+
     if _YOLO_MODEL is None:
         print(f"⏳ [Init] Đang nạp mô hình YOLOv8 từ: {yolo_weight_path}...")
         _YOLO_MODEL = YOLO(yolo_weight_path)

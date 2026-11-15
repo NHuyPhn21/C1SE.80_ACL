@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.database import Base
 from backend.image_utils import BASE_DIR
-from backend.models import ApiKeyConfig, Chapter, ComicPage, Project, TextRegion, User
+from backend.models import ApiKeyConfig, Chapter, ComicPage, Project, QueueTask, SystemLog, TextRegion, User
 from services.settings_service import SettingsService
 from services.typesetting_service import save_translation_and_render
 
@@ -48,11 +48,32 @@ class SettingsAndTypesettingTests(unittest.TestCase):
             translated_text="Xin chao",
         )
         db.add(region)
+        task = QueueTask(chapter_id=chapter.id, status="COMPLETED", progress_percent=100)
+        db.add(task)
+        db.flush()
+        db.add(SystemLog(task_id=task.id, level="INFO", message="Pipeline completed"))
         db.commit()
+        self.user_id = user.id
         self.project_id = project.id
         self.page_id = page.id
         self.region_id = region.id
         db.close()
+
+    def test_quota_usage_and_clear_logs(self) -> None:
+        service = SettingsService(
+            self.session_factory,
+            encryption_secret="test-secret",
+            initialize_database=False,
+        )
+        service.create_glossary(self.project_id, "先輩", "Tien boi")
+        quota = service.get_quota_usage(self.user_id)
+        self.assertEqual(quota["translated_bubbles"], 1)
+        self.assertEqual(quota["glossary_terms"], 1)
+        self.assertGreaterEqual(quota["requests_this_month"], 2)
+
+        deleted = service.clear_logs(self.user_id, self.project_id)
+        self.assertEqual(deleted, 1)
+        self.assertEqual(service.clear_logs(self.user_id, self.project_id), 0)
 
     def test_glossary_crud(self) -> None:
         service = SettingsService(
