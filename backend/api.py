@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal, init_db
 from backend.image_utils import BASE_DIR, resolve_project_path
-from backend.models import ApiKeyConfig, Chapter, ComicPage, CustomGlossary, Project, QueueTask, SystemLog, TextRegion, User
+from backend.models import ApiKeyConfig, Chapter, ComicPage, CustomGlossary, Project, ProjectMembership, QueueTask, SystemLog, TextRegion, User
 from backend.schemas import (
     BubbleUpdateRequest,
     BubbleCreateRequest,
@@ -24,6 +24,7 @@ from backend.schemas import (
     ProjectCreateRequest,
     QueueStartRequest,
     RegisterRequest,
+    RoleUpdateRequest,
     TeamInviteRequest,
     TranslationRequest,
     TypesettingUpdateRequest,
@@ -84,6 +85,26 @@ def _ensure_chapter(db: Session, chapter_id: int | None) -> Chapter:
     db.commit()
     db.refresh(chapter)
     return chapter
+
+
+def _check_project_role(project_id: int, user_id: int | None, allowed_roles: tuple[str, ...]) -> None:
+    if user_id is None:
+        return
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project.owner_id == user_id:
+            return
+        membership = db.query(ProjectMembership).filter(
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.user_id == user_id,
+        ).first()
+        if not membership or membership.project_role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Permission denied for this operation")
+    finally:
+        db.close()
 
 
 def _serialize_region(region: TextRegion) -> dict:
@@ -251,6 +272,34 @@ def invite_project_member(project_id: int, request: TeamInviteRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.delete("/projects/{project_id}/members/{user_id}")
+def remove_project_member(project_id: int, user_id: int, caller_user_id: int | None = None) -> dict:
+    try:
+        _check_project_role(project_id, caller_user_id, ("Owner", "Project Manager"))
+        TeamService().remove_member(project_id, user_id)
+        return {"removed_user_id": user_id, "message": "Member removed from project."}
+    except TeamServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/projects/{project_id}/members/{user_id}")
+def update_project_member_role(
+    project_id: int, user_id: int, request: RoleUpdateRequest, caller_user_id: int | None = None
+) -> dict:
+    try:
+        _check_project_role(project_id, caller_user_id, ("Owner", "Project Manager"))
+        member = TeamService().update_member_role(project_id, user_id, request.role)
+        return {
+            "user_id": member.user_id,
+            "name": member.name,
+            "email": member.email,
+            "role": member.role,
+            "is_owner": member.is_owner,
+        }
+    except TeamServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/projects/{project_id}/chapters")
 def create_chapter(project_id: int, request: ChapterCreateRequest) -> dict:
     db = SessionLocal()
@@ -310,12 +359,16 @@ def get_settings(user_id: int) -> dict:
 def save_settings_api_key(user_id: int, request: ApiKeyRequest) -> dict[str, str]:
     db = SessionLocal()
     try:
-        project = db.query(Project).filter(
-            Project.id == request.project_id,
-            Project.owner_id == user_id,
-        ).first()
+        project = db.query(Project).filter(Project.id == request.project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
+        if project.owner_id != user_id:
+            membership = db.query(ProjectMembership).filter(
+                ProjectMembership.project_id == request.project_id,
+                ProjectMembership.user_id == user_id,
+            ).first()
+            if not membership or membership.project_role not in ("Owner", "Project Manager"):
+                raise HTTPException(status_code=403, detail="Only Owner or Project Manager can configure API keys.")
         SettingsService().save_api_key(request.project_id, request.provider, request.api_key)
         return {"message": "API key saved securely."}
     finally:
@@ -441,7 +494,8 @@ def list_project_chapters(project_id: int) -> list[dict]:
 
 
 @router.delete("/projects/{project_id}/chapters/{chapter_id}")
-def delete_project_chapter(project_id: int, chapter_id: int) -> dict[str, int | str]:
+def delete_project_chapter(project_id: int, chapter_id: int, user_id: int | None = None) -> dict[str, int | str]:
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
     db = SessionLocal()
     try:
         chapter = db.query(Chapter).filter(

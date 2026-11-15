@@ -1,16 +1,27 @@
 import os
 from pathlib import Path
-import torch
 from PIL import Image
-from ultralytics import YOLO
-from manga_ocr import MangaOcr
 
-# --- BẢN VÁ PYTORCH 2.5+ CHO ULTRALYTICS YOLO ---
-_original_load = torch.load
-def patched_load(*args, **kwargs):
-    kwargs["weights_only"] = False
-    return _original_load(*args, **kwargs)
-torch.load = patched_load
+try:
+    import torch
+    # --- BẢN VÁ PYTORCH 2.5+ CHO ULTRALYTICS YOLO ---
+    _original_load = torch.load
+    def patched_load(*args, **kwargs):
+        kwargs["weights_only"] = False
+        return _original_load(*args, **kwargs)
+    torch.load = patched_load
+except ImportError:
+    torch = None
+
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
+
+try:
+    from manga_ocr import MangaOcr
+except ImportError:
+    MangaOcr = None
 
 # Tự động xác định thư mục gốc và đường dẫn trọng số YOLO
 BASE_DIR = Path(__file__).resolve().parent.parent

@@ -16,6 +16,8 @@ import {
   getSettings,
   getSettingsLogs,
   inviteProjectMember,
+  removeProjectMember,
+  updateProjectMemberRole,
   rerunPageOcr,
   restoreBubble,
   saveApiKey,
@@ -1567,6 +1569,11 @@ export function TeamScreen({
     void loadMembers();
   }, [project.id]);
 
+  const isCurrentUserAdmin =
+    members.some(
+      (m) => String(m.user_id) === String(session.user.id) && (m.is_owner || m.role === "Project Manager")
+    ) || session.user.role === "ADMIN" || session.user.role === "Owner";
+
   const invite = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -1579,6 +1586,25 @@ export function TeamScreen({
       setError(requestError instanceof Error ? requestError.message : "Unable to invite member.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleRoleChange = async (memberUserId: number, newRole: string) => {
+    try {
+      const updated = await updateProjectMemberRole(project.id, memberUserId, newRole, session.user.id);
+      setMembers((current) => current.map((m) => (m.user_id === memberUserId ? updated : m)));
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to update member role.");
+    }
+  };
+
+  const handleRemoveMember = async (memberUserId: number, memberName: string) => {
+    if (!window.confirm(`Are you sure you want to remove member "${memberName}" from the project?`)) return;
+    try {
+      await removeProjectMember(project.id, memberUserId, session.user.id);
+      setMembers((current) => current.filter((m) => m.user_id !== memberUserId));
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to remove member.");
     }
   };
 
@@ -1672,11 +1698,37 @@ export function TeamScreen({
                       <small>{member.email}</small>
                     </div>
                   </div>
-                  <b className={`role-${member.role.toLowerCase().replace(" ", "-")}`}>
-                    {member.role}
-                  </b>
+                  {member.is_owner ? (
+                    <b className="role-owner">Owner</b>
+                  ) : isCurrentUserAdmin ? (
+                    <select
+                      style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #ccc" }}
+                      value={member.role}
+                      onChange={(e) => void handleRoleChange(member.user_id, e.target.value)}
+                      aria-label={`Role for ${member.name}`}
+                    >
+                      <option value="Translator">Translator</option>
+                      <option value="Typesetter">Typesetter</option>
+                      <option value="Project Manager">Project Manager</option>
+                    </select>
+                  ) : (
+                    <b className={`role-${member.role.toLowerCase().replace(" ", "-")}`}>{member.role}</b>
+                  )}
                   <span>{member.is_owner ? "Overall Supervision" : "Assigned project tasks"}</span>
-                  <small>{member.is_owner ? "Owner" : ""}</small>
+                  <div>
+                    {member.is_owner ? (
+                      <small>Owner</small>
+                    ) : isCurrentUserAdmin ? (
+                      <button
+                        type="button"
+                        className="delete-bubble-button"
+                        onClick={() => void handleRemoveMember(member.user_id, member.name)}
+                        title="Remove member"
+                      >
+                        <AppIcon name="trash" /> Remove
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
