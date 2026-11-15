@@ -162,3 +162,35 @@ class TeamService:
             raise
         finally:
             db.close()
+
+    def update_member_role(self, project_id: int, user_id: int, role: str) -> TeamMember:
+        db = self.session_factory()
+        try:
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if project is None:
+                raise TeamServiceError("Project not found.")
+            if project.owner_id == user_id:
+                raise TeamServiceError("Cannot change role of project owner.")
+            membership = (
+                db.query(ProjectMembership)
+                .filter(
+                    ProjectMembership.project_id == project_id,
+                    ProjectMembership.user_id == user_id,
+                )
+                .first()
+            )
+            if membership is None:
+                raise TeamServiceError("Project membership not found.")
+            membership.project_role = role
+            db.commit()
+            return TeamMember(
+                user_id=membership.user.id,
+                name=membership.user.username,
+                email=membership.user.email,
+                role=membership.project_role,
+            )
+        except TeamServiceError:
+            db.rollback()
+            raise
+        finally:
+            db.close()

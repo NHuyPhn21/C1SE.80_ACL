@@ -70,6 +70,10 @@ class TeamInviteRequest(BaseModel):
     role: str
 
 
+class RoleUpdateRequest(BaseModel):
+    role: str
+
+
 class ChapterCreateRequest(BaseModel):
     chapter_name: str
 
