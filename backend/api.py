@@ -4,10 +4,11 @@ import json
 import os
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal, init_db
@@ -25,6 +26,7 @@ from backend.schemas import (
     GlossaryUpdateRequest,
     LoginRequest,
     ProjectCreateRequest,
+    ProjectUpdateRequest,
     QueueStartRequest,
     RegisterRequest,
     RoleUpdateRequest,
@@ -39,7 +41,7 @@ from services.password_reset_mailer import (
 )
 from services.workspace_service import WorkspaceService, WorkspaceServiceError
 from services.team_service import TeamService, TeamServiceError
-from services.queue_service import QueueService, build_rendered_zip
+from services.queue_service import QueueService, build_release_manifest, build_rendered_zip
 from services.review_service import ReviewServiceError, flag_page_for_second_review, save_ocr_draft
 from services.typesetting_service import TypesettingServiceError, save_translation_and_render
 from services.settings_service import SettingsService, SettingsServiceError
@@ -211,6 +213,17 @@ def forgot_password(request: ForgotPasswordRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _project_owner_id(project_id: int) -> int:
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project.owner_id
+    finally:
+        db.close()
+
+
 def _serialize_project(summary) -> dict:
     return {
         "id": summary.id,
@@ -242,6 +255,43 @@ def create_project(user_id: int, request: ProjectCreateRequest) -> dict:
         return _serialize_project(project)
     except WorkspaceServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/projects/{project_id}")
+def update_project(project_id: int, request: ProjectUpdateRequest, user_id: int | None = None) -> dict:
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
+    try:
+        service = WorkspaceService()
+        service.update_project(project_id, request.title, request.description)
+        owner_id = _project_owner_id(project_id)
+        summary = next(
+            item for item in service.list_projects(user_id if user_id is not None else owner_id)
+            if item.id == project_id
+        )
+        return _serialize_project(summary)
+    except WorkspaceServiceError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(project_id: int, user_id: int | None = None) -> dict:
+    _check_project_role(project_id, user_id, ("Owner",))
+    try:
+        stored_paths = WorkspaceService().delete_project(project_id)
+    except WorkspaceServiceError as exc:
+        message = str(exc)
+        status = 404 if "not found" in message.lower() else 409 if "running" in message else 400
+        raise HTTPException(status_code=status, detail=message) from exc
+    data_root = (BASE_DIR / "data").resolve()
+    for path_value in set(stored_paths):
+        resolved = Path(resolve_project_path(path_value)).resolve()
+        if resolved.is_file() and data_root in resolved.parents:
+            try:
+                resolved.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return {"deleted_project_id": project_id, "message": "Project and all its data were deleted."}
 
 
 @router.get("/projects/{project_id}/members")
@@ -314,7 +364,12 @@ def create_chapter(project_id: int, request: ChapterCreateRequest) -> dict:
         project = db.query(Project).filter(Project.id == project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        chapter_number = db.query(Chapter).filter(Chapter.project_id == project_id).count() + 1
+        chapter_number = (
+            db.query(func.max(Chapter.chapter_number))
+            .filter(Chapter.project_id == project_id)
+            .scalar()
+            or 0
+        ) + 1
         chapter = Chapter(
             project_id=project_id,
             chapter_number=chapter_number,
@@ -715,14 +770,11 @@ def delete_project_data(project_id: int, user_id: int | None = None) -> dict[str
         db.close()
 
 
-def _serialize_queue(db: Session, project_id: int) -> dict:
-    chapters = (
-        db.query(Chapter)
-        .filter(Chapter.project_id == project_id)
-        .order_by(Chapter.id.desc())
-        .limit(1)
-        .all()
-    )
+def _serialize_queue(db: Session, project_id: int, chapter_id: int | None = None) -> dict:
+    chapter_query = db.query(Chapter).filter(Chapter.project_id == project_id)
+    if chapter_id is not None:
+        chapter_query = chapter_query.filter(Chapter.id == chapter_id)
+    chapters = chapter_query.order_by(Chapter.id.desc()).limit(1).all()
     chapter_ids = [chapter.id for chapter in chapters]
     pages = (
         db.query(ComicPage)
@@ -743,6 +795,13 @@ def _serialize_queue(db: Session, project_id: int) -> dict:
     task = tasks[0] if tasks else None
     return {
         "project_id": project_id,
+        "chapters": [
+            {"id": item.id, "chapter_number": item.chapter_number, "chapter_name": item.chapter_name}
+            for item in db.query(Chapter)
+            .filter(Chapter.project_id == project_id)
+            .order_by(Chapter.chapter_number.asc())
+            .all()
+        ],
         "chapter_id": task.chapter_id if task else (chapter_ids[0] if chapter_ids else None),
         "task": {
             "id": task.id,
@@ -770,12 +829,16 @@ def _serialize_queue(db: Session, project_id: int) -> dict:
 
 
 @router.get("/projects/{project_id}/queue")
-def get_project_queue(project_id: int) -> dict:
+def get_project_queue(project_id: int, chapter_id: int | None = None) -> dict:
     db = SessionLocal()
     try:
         if db.query(Project).filter(Project.id == project_id).first() is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        return _serialize_queue(db, project_id)
+        if chapter_id is not None and db.query(Chapter).filter(
+            Chapter.id == chapter_id, Chapter.project_id == project_id
+        ).first() is None:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+        return _serialize_queue(db, project_id, chapter_id)
     finally:
         db.close()
 
@@ -797,26 +860,54 @@ def start_project_queue(project_id: int, request: QueueStartRequest) -> dict:
         db.commit()
         task_id = task.id
         submit_pipeline_task(task_id, chapter.id)
-        return _serialize_queue(db, project_id)
+        return _serialize_queue(db, project_id, chapter.id)
     finally:
         db.close()
 
 
 @router.get("/projects/{project_id}/queue/export")
-def export_project_queue(project_id: int):
+def export_project_queue(project_id: int, chapter_id: int | None = None):
     db = SessionLocal()
     try:
         project = db.query(Project).filter(Project.id == project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        files = QueueService().rendered_files(project.title)
-        if not files:
+        suffix = ""
+        if chapter_id is not None:
+            chapter = db.query(Chapter).filter(
+                Chapter.id == chapter_id, Chapter.project_id == project_id
+            ).first()
+            if chapter is None:
+                raise HTTPException(status_code=404, detail="Chapter not found")
+            suffix = f"-chapter-{chapter.chapter_number}"
+        entries = QueueService().rendered_entries(chapter_id=chapter_id, project_id=project_id)
+        if not entries:
             raise HTTPException(status_code=404, detail="No rendered pages available")
-        archive = build_rendered_zip(files)
+        labelled = []
+        for chapter, path in entries:
+            base_label = f"Chapter {chapter.chapter_number}"
+            custom_name = (chapter.chapter_name or "").strip()
+            if custom_name and custom_name.lower() != base_label.lower():
+                label = f"{base_label} - {custom_name}"
+            else:
+                label = base_label
+            labelled.append((label, path))
+        archive = build_rendered_zip(
+            [path for _, path in labelled],
+            manifest=build_release_manifest(project.title, labelled),
+        )
+        raw_filename = f"{project.title}{suffix}-rendered.zip"
+        ascii_filename = "".join(ch if ch.isascii() and ch not in '"\\/' else "_" for ch in raw_filename)
+        encoded_filename = quote(raw_filename)
         return StreamingResponse(
             iter([archive]),
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{project.title}-rendered.zip"'},
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{ascii_filename}"; '
+                    f"filename*=UTF-8''{encoded_filename}"
+                )
+            },
         )
     finally:
         db.close()
@@ -837,15 +928,16 @@ async def upload_page(
     db = SessionLocal()
     try:
         chapter = _ensure_chapter(db, chapter_id)
-        page_count = (
-            db.query(ComicPage)
+        max_page_num = (
+            db.query(func.max(ComicPage.page_number))
             .filter(ComicPage.chapter_id == chapter.id)
-            .count()
+            .scalar()
+            or 0
         )
         relative_path = target.relative_to(BASE_DIR).as_posix()
         page = ComicPage(
             chapter_id=chapter.id,
-            page_number=page_count + 1,
+            page_number=max_page_num + 1,
             original_path=relative_path,
             status="PROCESSING",
         )

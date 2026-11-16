@@ -11,6 +11,22 @@ export const createProject = (userId: string, title: string, description: string
     body: JSON.stringify({ title, description }),
   });
 
+export const updateProject = (projectId: number, title: string, description: string, userId?: string) =>
+  request<ProjectSummary>(
+    `/api/projects/${projectId}${userId ? `?user_id=${encodeURIComponent(userId)}` : ""}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, description }),
+    },
+  );
+
+export const deleteProject = (projectId: number, userId?: string) =>
+  request<{ deleted_project_id: number; message: string }>(
+    `/api/projects/${projectId}${userId ? `?user_id=${encodeURIComponent(userId)}` : ""}`,
+    { method: "DELETE" },
+  );
+
 export const getProjectMembers = (projectId: number) =>
   request<TeamMember[]>(`/api/projects/${projectId}/members`);
 

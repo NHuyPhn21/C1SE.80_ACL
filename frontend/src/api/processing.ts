@@ -2,7 +2,7 @@ import { request } from "./client";
 import type { Chapter, Page, QueueSnapshot, Region } from "./types";
 
 export const getChapter = (chapterId: number) => request<Chapter>(`/api/chapters/${chapterId}`);
-export const getProjectQueue = (projectId: number) => request<QueueSnapshot>(`/api/projects/${projectId}/queue`);
+export const getProjectQueue = (projectId: number, chapterId?: number | null) => request<QueueSnapshot>(`/api/projects/${projectId}/queue${chapterId ? `?chapter_id=${chapterId}` : ""}`);
 export const startProjectQueue = (projectId: number, chapterId: number) => request<QueueSnapshot>(`/api/projects/${projectId}/queue/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chapter_id: chapterId }) });
 export const uploadPage = (file: File, chapterId?: number) => { const body = new FormData(); body.append("file", file); return request<Page>(`/api/upload${chapterId ? `?chapter_id=${chapterId}` : ""}`, { method: "POST", body }); };
 export const updateBubble = (regionId: number, patch: Partial<Region>) => request<Region>(`/api/bubbles/${regionId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
