@@ -26,6 +26,11 @@ export default function App() {
   });
   const [screen, setScreen] = useState<ScreenName>("workspace");
   const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
+  const [isResetRoute, setIsResetRoute] = useState<boolean>(
+    () =>
+      window.location.pathname === "/reset-password" ||
+      new URLSearchParams(window.location.search).has("token"),
+  );
 
   const handleLogout = () => {
     localStorage.removeItem(SESSION_KEY);
@@ -41,8 +46,15 @@ export default function App() {
     setScreen(nextScreen);
   };
 
-   if (window.location.pathname === "/reset-password") {
-    return <ResetPasswordScreen />;
+  if (isResetRoute) {
+    return (
+      <ResetPasswordScreen
+        onBackToLogin={() => {
+          window.history.replaceState({}, "", "/");
+          setIsResetRoute(false);
+        }}
+      />
+    );
   }
 
   if (!session) {
