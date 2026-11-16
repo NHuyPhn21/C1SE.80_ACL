@@ -83,6 +83,9 @@ class QueueService:
             for page, chapter in query.order_by(Chapter.chapter_number.asc(), ComicPage.page_number.asc()).all():
                 resolved = Path(resolve_project_path(page.rendered_path))
                 if resolved.exists() and resolved.is_file():
+                    _ = (chapter.id, chapter.chapter_number, chapter.chapter_name)
+                    if chapter in db:
+                        db.expunge(chapter)
                     entries.append((chapter, resolved))
             return entries
         finally:

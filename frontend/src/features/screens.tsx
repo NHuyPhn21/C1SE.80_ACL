@@ -303,7 +303,13 @@ export function ProjectCard({
           <summary aria-label={`More actions for ${project.title}`}>
             <AppIcon name="more" />
           </summary>
-          <div>
+          <div
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest("button")) {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+              }
+            }}
+          >
             <button onClick={onQueue}>
               <AppIcon name="queue" /> Queue Monitor
             </button>
@@ -364,7 +370,7 @@ export function ReviewScreen({
     void getProjectChapters(project.id)
       .then((items) => {
         setChapters(items);
-        setChapterId(items[0]?.id ?? null);
+        setChapterId(items[items.length - 1]?.id ?? null);
       })
       .catch((requestError) =>
         setError(requestError instanceof Error ? requestError.message : "Unable to load chapters."),
@@ -725,7 +731,7 @@ export function ReviewScreen({
             {chapters.length ? (
               chapters.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.chapter_name}
+                  {item.chapter_name || `Chapter ${item.chapter_number}`}
                 </option>
               ))
             ) : (
@@ -920,7 +926,7 @@ export function TypesettingScreen({
     void getProjectChapters(project.id)
       .then((items) => {
         setChapters(items);
-        setChapterId(items[0]?.id ?? null);
+        setChapterId(items[items.length - 1]?.id ?? null);
       })
       .catch((requestError) =>
         setError(requestError instanceof Error ? requestError.message : "Unable to load chapters."),
@@ -1010,7 +1016,7 @@ export function TypesettingScreen({
             {chapters.length ? (
               chapters.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.chapter_name}
+                  {item.chapter_name || `Chapter ${item.chapter_number}`}
                 </option>
               ))
             ) : (
@@ -1189,6 +1195,11 @@ export function QueueScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    setChapterId(null);
+    setLoading(true);
+  }, [project.id]);
+
   const refresh = async () => {
     try {
       const snapshot = await getProjectQueue(project.id, chapterId);
@@ -1224,6 +1235,7 @@ export function QueueScreen({
     ? Math.round((queue.completed_pages / queue.total_pages) * 100)
     : 0;
   const completed = Boolean(queue?.total_pages && queue.completed_pages === queue.total_pages);
+  const hasRenderedPages = Boolean(queue?.pages.some((page) => page.rendered));
   const taskRunning = queue?.task?.status === "RUNNING" || queue?.task?.status === "QUEUED";
   const taskStatus = queue?.task?.status ?? "NOT_STARTED";
   const downloadZip = () => {
@@ -1281,7 +1293,7 @@ export function QueueScreen({
                   ? "↻ Re-run Pipeline"
                   : "▶ Run Pipeline"}
             </button>
-            {completed && (
+            {(completed || hasRenderedPages) && (
               <button className="create-project-button" onClick={downloadZip}>
                 ⇩ Download Chapter (ZIP)
               </button>
@@ -1450,24 +1462,23 @@ export function ChapterScreen({
 
   const createAndUpload = async () => {
     if (!files.length) return;
-    if (selectedId === "new" && !newName.trim()) {
-      setError("Enter a name for the new chapter (e.g. Chapter 2) or pick an existing one.");
-      return;
-    }
     setBusy(true);
     setError("");
     const pendingFiles = [...files];
-    setFiles([]);
-    onNavigate("queue");
     try {
+      const fallbackChapterTitle = `Chapter ${chapters.length + 1}`;
       const nextChapter =
-        chapter ?? (await createChapter(project.id, newName.trim()));
+        chapter ?? (await createChapter(project.id, newName.trim() || fallbackChapterTitle));
       if (!chapter) {
         setChapters((current) => [...current, nextChapter]);
         setSelectedId(nextChapter.id);
         setNewName("");
       }
-      await Promise.all(pendingFiles.map((file) => uploadPage(file, nextChapter.id)));
+      setFiles([]);
+      onNavigate("queue");
+      for (const file of pendingFiles) {
+        await uploadPage(file, nextChapter.id);
+      }
       await startProjectQueue(project.id, nextChapter.id);
     } catch (requestError) {
       setError(
