@@ -417,14 +417,20 @@ def render_translated_text_on_page(
 
             font = font_cache[best_font_size]
             full_text = "\n".join(best_lines)
+            alignment = region.alignment if region.alignment in ("left", "right") else "center"
 
             t_left, t_top, t_right, t_bottom = draw.multiline_textbbox(
-                (0, 0), full_text, font=font, spacing=best_line_spacing, align="center"
+                (0, 0), full_text, font=font, spacing=best_line_spacing, align=alignment
             )
             text_w = t_right - t_left
             text_h = t_bottom - t_top
 
-            draw_x = center_x - (text_w / 2.0) - t_left
+            if alignment == "left":
+                draw_x = center_x - (box_width / 2.0) - t_left
+            elif alignment == "right":
+                draw_x = center_x + (box_width / 2.0) - text_w - t_left
+            else:
+                draw_x = center_x - (text_w / 2.0) - t_left
             draw_y = center_y - (text_h / 2.0) - t_top
 
             draw.multiline_text(
@@ -433,7 +439,7 @@ def render_translated_text_on_page(
                 font=font,
                 fill="black",
                 spacing=best_line_spacing,
-                align="center",
+                align=alignment,
                 stroke_width=2,
                 stroke_fill="white"
             )

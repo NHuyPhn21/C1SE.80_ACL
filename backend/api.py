@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from backend.image_utils import BASE_DIR, resolve_project_path
 from backend.models import ApiKeyConfig, Chapter, ComicPage, CustomGlossary, Project, ProjectMembership, QueueTask, SystemLog, TextRegion, User
 from backend.schemas import (
     BubbleUpdateRequest,
+    OcrDraftRequest,
     BubbleCreateRequest,
     BubbleRestoreRequest,
     ApiKeyRequest,
@@ -39,6 +40,7 @@ from services.password_reset_mailer import (
 from services.workspace_service import WorkspaceService, WorkspaceServiceError
 from services.team_service import TeamService, TeamServiceError
 from services.queue_service import QueueService, build_rendered_zip
+from services.review_service import ReviewServiceError, flag_page_for_second_review, save_ocr_draft
 from services.typesetting_service import TypesettingServiceError, save_translation_and_render
 from services.settings_service import SettingsService, SettingsServiceError
 from backend.queue_worker import submit_pipeline_task
@@ -1007,6 +1009,8 @@ def update_bubble(region_id: int, request: BubbleUpdateRequest) -> dict:
             region.bbox_json = json.dumps(request.bbox)
         if request.font_size is not None:
             region.font_size = request.font_size
+        if request.alignment is not None:
+            region.alignment = request.alignment
         db.commit()
         db.refresh(region)
         return _serialize_region(region)
@@ -1101,6 +1105,7 @@ def typeset_page(page_id: int, request: TypesettingUpdateRequest) -> dict:
             region_id=request.region_id,
             translated_text=request.translated_text,
             font_size=request.font_size,
+            alignment=request.alignment,
         )
     except TypesettingServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1111,5 +1116,55 @@ def typeset_page(page_id: int, request: TypesettingUpdateRequest) -> dict:
         if page is None:
             raise HTTPException(status_code=404, detail="Page not found")
         return _serialize_page(page)
+    finally:
+        db.close()
+
+
+def _page_response(page_id: int) -> dict:
+    db = SessionLocal()
+    try:
+        page = db.query(ComicPage).filter(ComicPage.id == page_id).first()
+        if page is None:
+            raise HTTPException(status_code=404, detail="Page not found")
+        return _serialize_page(page)
+    finally:
+        db.close()
+
+
+@router.post("/pages/{page_id}/ocr-draft")
+def save_page_ocr_draft(page_id: int, request: OcrDraftRequest) -> dict:
+    """Save OCR corrections only (no translation / rendering)."""
+    try:
+        save_ocr_draft(page_id, request.regions)
+    except ReviewServiceError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return _page_response(page_id)
+
+
+@router.post("/pages/{page_id}/flag")
+def flag_page(page_id: int) -> dict:
+    """Mark a page as needing a second review."""
+    try:
+        flag_page_for_second_review(page_id)
+    except ReviewServiceError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return _page_response(page_id)
+
+
+@router.get("/pages/{page_id}/download")
+def download_page(page_id: int):
+    db = SessionLocal()
+    try:
+        page = db.query(ComicPage).filter(ComicPage.id == page_id).first()
+        if page is None:
+            raise HTTPException(status_code=404, detail="Page not found")
+        if not page.rendered_path:
+            raise HTTPException(status_code=404, detail="This page has not been rendered yet")
+        path = Path(resolve_project_path(page.rendered_path)).resolve()
+        if not path.is_file() or (BASE_DIR / "data").resolve() not in path.parents:
+            raise HTTPException(status_code=404, detail="Rendered file not found")
+        return FileResponse(path, filename=f"page_{page.page_number:03d}{path.suffix}")
     finally:
         db.close()

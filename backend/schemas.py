@@ -1,10 +1,16 @@
 """Pydantic request schemas for the FastAPI application."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
 class TranslationRequest(BaseModel):
     page_id: int
+    regions: dict[int, str] = Field(default_factory=dict)
+
+
+class OcrDraftRequest(BaseModel):
     regions: dict[int, str] = Field(default_factory=dict)
 
 
@@ -18,6 +24,7 @@ class BubbleUpdateRequest(BaseModel):
     translated_text: str | None = None
     bbox: list[int] | None = Field(default=None, min_length=4, max_length=4)
     font_size: float | None = Field(default=None, gt=0)
+    alignment: Literal["left", "center", "right"] | None = None
 
 
 class BubbleCreateRequest(BaseModel):
@@ -36,6 +43,7 @@ class TypesettingUpdateRequest(BaseModel):
     region_id: int
     translated_text: str
     font_size: float | None = Field(default=None, gt=0)
+    alignment: Literal["left", "center", "right"] | None = None
 
 
 class GlossaryCreateRequest(BaseModel):
