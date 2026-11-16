@@ -5,9 +5,11 @@ import {
   createChapter,
   createGlossary,
   createProject,
+  updateProject,
   deleteBubble,
   deleteChapter,
   deleteGlossary,
+  deleteProject,
   deleteProjectData,
   getChapter,
   getGlossary,
@@ -65,9 +67,28 @@ export function WorkspaceScreen({
 }) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<ProjectSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+
+  const removeProject = async (project: ProjectSummary) => {
+    if (
+      !window.confirm(
+        `Permanently delete "${project.title}" with all chapters, pages, translations and rendered files? This cannot be undone.`,
+      )
+    )
+      return;
+    try {
+      await deleteProject(project.id, session.user.id);
+      const remaining = projects.filter((item) => item.id !== project.id);
+      setProjects(remaining);
+      if (activeProject?.id === project.id) onSyncProject(remaining[0] ?? null);
+      setError("");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to delete project.");
+    }
+  };
 
   const loadProjects = async () => {
     setLoading(true);
@@ -165,6 +186,8 @@ export function WorkspaceScreen({
                 onQueue={() => onNavigate("queue", project)}
                 onReview={() => onNavigate("review", project)}
                 onTypesetting={() => onNavigate("typesetting", project)}
+                onEdit={() => setEditing(project)}
+                onDelete={() => void removeProject(project)}
               />
             ))}
           </div>
@@ -203,6 +226,20 @@ export function WorkspaceScreen({
           }}
         />
       )}
+      {editing && (
+        <CreateProjectModal
+          userId={session.user.id}
+          project={editing}
+          onClose={() => setEditing(null)}
+          onCreated={(updated) => {
+            setProjects((current) =>
+              current.map((item) => (item.id === updated.id ? updated : item)),
+            );
+            if (activeProject?.id === updated.id) onSyncProject(updated);
+            setEditing(null);
+          }}
+        />
+      )}
     </AppLayout>
   );
 }
@@ -216,6 +253,8 @@ export function ProjectCard({
   onQueue,
   onReview,
   onTypesetting,
+  onEdit,
+  onDelete,
 }: {
   project: ProjectSummary;
   isSelected?: boolean;
@@ -225,6 +264,8 @@ export function ProjectCard({
   onQueue: () => void;
   onReview: () => void;
   onTypesetting: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const statusLabel =
     project.completed_pages === project.total_pages && project.total_pages > 0
@@ -275,6 +316,12 @@ export function ProjectCard({
             <button onClick={onTeam}>
               <AppIcon name="users" /> Team &amp; Roles
             </button>
+            {onEdit && <button onClick={onEdit}>✎ Edit project</button>}
+            {onDelete && (
+              <button className="danger-menu-item" onClick={onDelete}>
+                🗑 Delete project
+              </button>
+            )}
           </div>
         </details>
       </div>
@@ -1138,12 +1185,15 @@ export function QueueScreen({
   onLogout: () => void;
 }) {
   const [queue, setQueue] = useState<QueueSnapshot | null>(null);
+  const [chapterId, setChapterId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const refresh = async () => {
     try {
-      setQueue(await getProjectQueue(project.id));
+      const snapshot = await getProjectQueue(project.id, chapterId);
+      setQueue(snapshot);
+      if (chapterId === null && snapshot.chapter_id) setChapterId(snapshot.chapter_id);
       setError("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load queue.");
@@ -1156,7 +1206,7 @@ export function QueueScreen({
     void refresh();
     const timer = window.setInterval(() => void refresh(), 5000);
     return () => window.clearInterval(timer);
-  }, [project.id]);
+  }, [project.id, chapterId]);
 
   const start = async () => {
     if (!queue?.chapter_id) return;
@@ -1177,7 +1227,7 @@ export function QueueScreen({
   const taskRunning = queue?.task?.status === "RUNNING" || queue?.task?.status === "QUEUED";
   const taskStatus = queue?.task?.status ?? "NOT_STARTED";
   const downloadZip = () => {
-    window.location.href = `/api/projects/${project.id}/queue/export`;
+    window.location.href = `/api/projects/${project.id}/queue/export${queue?.chapter_id ? `?chapter_id=${queue.chapter_id}` : ""}`;
   };
 
   return (
@@ -1200,6 +1250,23 @@ export function QueueScreen({
             </p>
           </div>
           <div className="queue-actions">
+            {queue && queue.chapters.length > 0 && (
+              <select
+                className="chapter-select"
+                aria-label="Select chapter"
+                value={chapterId ?? queue.chapter_id ?? ""}
+                onChange={(event) => {
+                  setLoading(true);
+                  setChapterId(Number(event.target.value));
+                }}
+              >
+                {queue.chapters.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.chapter_name || `Chapter ${item.chapter_number}`}
+                  </option>
+                ))}
+              </select>
+            )}
             <button onClick={() => void refresh()}>
               <AppIcon name="refresh" /> Auto-refresh: 5s
             </button>
@@ -1239,7 +1306,7 @@ export function QueueScreen({
                 <strong>
                   {completed
                     ? "Chapter Localization 100% Complete!"
-                    : `Active Chapter: ${project.title}`}
+                    : `Active Chapter: ${queue.chapters.find((item) => item.id === queue.chapter_id)?.chapter_name ?? project.title}`}
                 </strong>
                 <p>
                   {completed
@@ -1354,7 +1421,19 @@ export function ChapterScreen({
   onNavigate: NavigateFn;
   onLogout: () => void;
 }) {
-  const [chapter, setChapter] = useState<ChapterSummary | null>(null);
+  const [chapters, setChapters] = useState<ChapterSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<number | "new">("new");
+  const [newName, setNewName] = useState("");
+  const chapter = chapters.find((item) => item.id === selectedId) ?? null;
+
+  useEffect(() => {
+    getProjectChapters(project.id)
+      .then((loaded) => {
+        setChapters(loaded);
+        setSelectedId(loaded.length ? loaded[loaded.length - 1].id : "new");
+      })
+      .catch(() => setChapters([]));
+  }, [project.id]);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1371,14 +1450,23 @@ export function ChapterScreen({
 
   const createAndUpload = async () => {
     if (!files.length) return;
+    if (selectedId === "new" && !newName.trim()) {
+      setError("Enter a name for the new chapter (e.g. Chapter 2) or pick an existing one.");
+      return;
+    }
     setBusy(true);
     setError("");
     const pendingFiles = [...files];
     setFiles([]);
     onNavigate("queue");
     try {
-      const nextChapter = chapter ?? (await createChapter(project.id, `${project.title} — Chapter 1`));
-      setChapter(nextChapter);
+      const nextChapter =
+        chapter ?? (await createChapter(project.id, newName.trim()));
+      if (!chapter) {
+        setChapters((current) => [...current, nextChapter]);
+        setSelectedId(nextChapter.id);
+        setNewName("");
+      }
       await Promise.all(pendingFiles.map((file) => uploadPage(file, nextChapter.id)));
       await startProjectQueue(project.id, nextChapter.id);
     } catch (requestError) {
@@ -1400,8 +1488,10 @@ export function ChapterScreen({
     setError("");
     try {
       await deleteChapter(project.id, chapter.id, session.user.id);
-      setChapter(null);
-      setMessage("Old chapter deleted. Upload new pages to create a clean chapter.");
+      const remaining = chapters.filter((item) => item.id !== chapter.id);
+      setChapters(remaining);
+      setSelectedId(remaining.length ? remaining[remaining.length - 1].id : "new");
+      setMessage("Chapter deleted.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to delete chapter.");
     } finally {
@@ -1420,7 +1510,8 @@ export function ChapterScreen({
     setError("");
     try {
       await deleteProjectData(project.id, session.user.id);
-      setChapter(null);
+      setChapters([]);
+      setSelectedId("new");
       setMessage("All old project data was deleted. Upload new pages to start clean.");
     } catch (requestError) {
       setError(
@@ -1457,6 +1548,37 @@ export function ChapterScreen({
               </button>
             )}
           </div>
+        </div>
+
+        <div className="chapter-picker">
+          <label>
+            <strong>Chapter</strong>
+            <select
+              value={selectedId}
+              disabled={busy}
+              onChange={(event) =>
+                setSelectedId(event.target.value === "new" ? "new" : Number(event.target.value))
+              }
+            >
+              {chapters.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.chapter_name || `Chapter ${item.chapter_number}`}
+                </option>
+              ))}
+              <option value="new">＋ New chapter…</option>
+            </select>
+          </label>
+          {selectedId === "new" && (
+            <label>
+              <strong>New chapter name</strong>
+              <input
+                value={newName}
+                maxLength={200}
+                placeholder={`Chapter ${chapters.length + 1}`}
+                onChange={(event) => setNewName(event.target.value)}
+              />
+            </label>
+          )}
         </div>
 
         <label className="dropzone">
@@ -2405,15 +2527,18 @@ export function ApiSettings({
 
 export function CreateProjectModal({
   userId,
+  project,
   onClose,
   onCreated,
 }: {
   userId: string;
+  project?: ProjectSummary;
   onClose: () => void;
   onCreated: (project: ProjectSummary) => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const isEdit = Boolean(project);
+  const [title, setTitle] = useState(project?.title ?? "");
+  const [description, setDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -2422,9 +2547,19 @@ export function CreateProjectModal({
     setBusy(true);
     setError("");
     try {
-      onCreated(await createProject(userId, title, description));
+      onCreated(
+        project
+          ? await updateProject(project.id, title, description, userId)
+          : await createProject(userId, title, description),
+      );
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to create project.");
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : isEdit
+            ? "Unable to update project."
+            : "Unable to create project.",
+      );
     } finally {
       setBusy(false);
     }
@@ -2440,8 +2575,12 @@ export function CreateProjectModal({
         <button type="button" className="modal-close" onClick={onClose}>
           ×
         </button>
-        <h2>Create New Project</h2>
-        <p>Set up a new comic series or chapter bundle for your localization team.</p>
+        <h2>{isEdit ? "Edit Project" : "Create New Project"}</h2>
+        <p>
+          {isEdit
+            ? "Update the name and description of this project."
+            : "Set up a new comic series or chapter bundle for your localization team."}
+        </p>
         {error && <div className="dashboard-error">{error}</div>}
         <label>Project / Series Name *</label>
         <input value={title} onChange={(event) => setTitle(event.target.value)} required />
@@ -2477,7 +2616,7 @@ export function CreateProjectModal({
             Cancel
           </button>
           <button className="create-project-button" disabled={busy}>
-            {busy ? "Creating..." : "Create Project"}
+            {busy ? (isEdit ? "Saving..." : "Creating...") : isEdit ? "Save Changes" : "Create Project"}
           </button>
         </div>
       </form>

@@ -70,6 +70,11 @@ class ProjectCreateRequest(BaseModel):
     description: str = ""
 
 
+class ProjectUpdateRequest(BaseModel):
+    title: str
+    description: str = ""
+
+
 class TeamInviteRequest(BaseModel):
     email: str
     role: str

@@ -2712,3 +2712,11 @@ select:focus {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Task 4: multi-chapter picker, queue chapter select, destructive menu item */
+.chapter-picker { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.chapter-picker label { display: flex; flex-direction: column; gap: 6px; min-width: 220px; flex: 1; }
+.chapter-picker select, .chapter-picker input, .chapter-select {
+  padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; background: #fff;
+}
+.project-actions-menu .danger-menu-item { color: #dc2626; }
