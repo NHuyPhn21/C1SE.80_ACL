@@ -2713,6 +2713,18 @@ select:focus {
   }
 }
 
+/* Task 5: review actions, active bubble, alignment, download */
+.review-secondary-actions { display: flex; gap: 8px; margin: 12px 0 8px; }
+.review-secondary-actions button { flex: 1; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; }
+.review-secondary-actions button:disabled { opacity: .6; cursor: default; }
+.bbox.active { outline: 3px solid #f59e0b; }
+.ocr-card.active { box-shadow: 0 0 0 2px #f59e0b; }
+.page-flag { color: #b45309; font-size: .8em; font-weight: 600; }
+.alignment-group { display: flex; gap: 6px; margin-bottom: 12px; }
+.alignment-group button { flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; }
+.alignment-group button.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+.download-page-button { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: inherit; text-decoration: none; }
+
 /* Task 4: multi-chapter picker, queue chapter select, destructive menu item */
 .chapter-picker {
   display: flex;

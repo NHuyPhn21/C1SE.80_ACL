@@ -8,6 +8,9 @@ from backend.image_utils import BASE_DIR, process_comic_page
 from backend.models import ComicPage, TextRegion
 
 
+VALID_ALIGNMENTS = ("left", "center", "right")
+
+
 class TypesettingServiceError(RuntimeError):
     pass
 
@@ -17,6 +20,7 @@ def save_translation_and_render(
     region_id: int,
     translated_text: str,
     font_size: float | None = None,
+    alignment: str | None = None,
     *,
     session_factory=SessionLocal,
     renderer: Callable[..., str | None] = process_comic_page,
@@ -24,6 +28,9 @@ def save_translation_and_render(
     clean_text = translated_text.strip()
     if not clean_text:
         raise TypesettingServiceError("Vietnamese dialogue cannot be empty.")
+
+    if alignment is not None and alignment not in VALID_ALIGNMENTS:
+        raise TypesettingServiceError("Alignment must be left, center or right.")
 
     db = session_factory()
     try:
@@ -39,6 +46,8 @@ def save_translation_and_render(
         region.translated_text = clean_text
         if font_size is not None:
             region.font_size = font_size
+        if alignment is not None:
+            region.alignment = alignment
         db.commit()
 
         output_path = renderer(page_id=page_id, use_lama_api=False)

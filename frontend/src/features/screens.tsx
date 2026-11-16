@@ -24,6 +24,9 @@ import {
   updateGlossary,
   updateProjectMemberRole,
   rerunPageOcr,
+  saveOcrDraft,
+  flagPage,
+  pageDownloadUrl,
   restoreBubble,
   saveApiKey,
   startProjectQueue,
@@ -45,7 +48,7 @@ import type {
 } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import { AppLayout, type ScreenName } from "../components/AppLayout";
-import type { Chapter, Region } from "../types";
+import type { Chapter, Page, Region } from "../types";
 import type { AuthSession } from "./auth/AuthScreen";
 
 const API_ORIGIN = import.meta.env.VITE_API_ORIGIN ?? "";
@@ -353,6 +356,9 @@ export function ReviewScreen({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState("");
+  const [activeRegionId, setActiveRegionId] = useState<number | null>(null);
+  const dragMoved = useRef(false);
   const [error, setError] = useState("");
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [deletedBubble, setDeletedBubble] = useState<(Region & { page_id: number }) | null>(null);
@@ -398,6 +404,11 @@ export function ReviewScreen({
     setImageSize({ width: 0, height: 0 });
   }, [imageUrl]);
 
+  useEffect(() => {
+    setNotice("");
+    setActiveRegionId(null);
+  }, [page?.id]);
+
   const updateOriginal = (regionId: number, text: string) => {
     if (!chapter || !page) return;
     setChapter({
@@ -420,6 +431,7 @@ export function ReviewScreen({
     setSaving(true);
     setError("");
     setMessage("");
+    setNotice("");
     try {
       const updated = await rerunPageOcr(page.id);
       setChapter((current) =>
@@ -436,6 +448,52 @@ export function ReviewScreen({
     } finally {
       setSaving(false);
     }
+  };
+
+  const replacePage = (updated: Page) =>
+    setChapter((current) =>
+      current
+        ? { ...current, pages: current.pages.map((item) => (item.id === updated.id ? updated : item)) }
+        : current,
+    );
+
+  const saveDraft = async () => {
+    if (!page) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const editedText = Object.fromEntries(
+        page.regions.map((region) => [region.id, region.original_text]),
+      );
+      const updated = await saveOcrDraft(page.id, editedText);
+      replacePage(updated);
+      setNotice("OCR draft saved. No translation was run.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to save OCR draft.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const flagForReview = async () => {
+    if (!page) return;
+    setError("");
+    try {
+      replacePage(await flagPage(page.id));
+      setNotice("Page flagged for second review.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to flag page.");
+    }
+  };
+
+  const focusRegionText = (regionId: number) => {
+    if (dragMoved.current) return;
+    const field = document.getElementById(`ocr-region-${regionId}`) as HTMLTextAreaElement | null;
+    if (!field) return;
+    field.scrollIntoView({ behavior: "smooth", block: "center" });
+    field.focus({ preventScroll: true });
+    setActiveRegionId(regionId);
   };
 
   const saveAndTranslate = async () => {
@@ -586,6 +644,7 @@ export function ReviewScreen({
     const point = getImagePoint(event);
     if (!point) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragMoved.current = false;
     setBoxInteraction({ regionId: region.id, mode, start: point, bbox: region.bbox });
   };
 
@@ -597,6 +656,7 @@ export function ReviewScreen({
     const [x1, y1, x2, y2] = boxInteraction.bbox;
     const dx = point.x - boxInteraction.start.x;
     const dy = point.y - boxInteraction.start.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved.current = true;
     const width = x2 - x1;
     const height = y2 - y1;
     const bbox: Region["bbox"] =
@@ -741,6 +801,7 @@ export function ReviewScreen({
         </div>
 
         {error && <div className="dashboard-error">{error}</div>}
+        {notice && <div className="typesetting-message">{notice}</div>}
         {message && (
           <div className="typesetting-message">
             {message}{" "}
@@ -812,11 +873,12 @@ export function ReviewScreen({
                       const [x, y, x2, y2] = region.bbox;
                       return (
                         <div
-                          className={`bbox ${region.original_text ? "" : "low-confidence"}`}
+                          className={`bbox ${region.original_text ? "" : "low-confidence"} ${activeRegionId === region.id ? "active" : ""}`}
                           key={region.id}
                           onPointerDown={(event) => handleBoxStart(event, region, "move")}
                           onPointerMove={handleBoxMove}
                           onPointerUp={(event) => void handleBoxEnd(event)}
+                          onClick={() => focusRegionText(region.id)}
                           style={{
                             left: `${(x / imageSize.width) * 100}%`,
                             top: `${(y / imageSize.height) * 100}%`,
@@ -856,7 +918,7 @@ export function ReviewScreen({
                 </div>
                 {page.regions.map((region) => (
                   <div
-                    className={`ocr-card ${!region.original_text ? "low-confidence" : ""}`}
+                    className={`ocr-card ${!region.original_text ? "low-confidence" : ""} ${activeRegionId === region.id ? "active" : ""}`}
                     key={region.id}
                   >
                     <div>
@@ -873,6 +935,7 @@ export function ReviewScreen({
                       </small>
                     </div>
                     <textarea
+                      id={`ocr-region-${region.id}`}
                       value={region.original_text}
                       onChange={(event) => updateOriginal(region.id, event.target.value)}
                     />
@@ -881,6 +944,17 @@ export function ReviewScreen({
                     </span>
                   </div>
                 ))}
+                <div className="review-secondary-actions">
+                  <button disabled={saving} onClick={() => void saveDraft()}>
+                    💾 Save OCR Draft
+                  </button>
+                  <button
+                    disabled={saving || page.status === "NEEDS_REVIEW"}
+                    onClick={() => void flagForReview()}
+                  >
+                    ⚑ {page.status === "NEEDS_REVIEW" ? "Flagged" : "Flag Page"}
+                  </button>
+                </div>
                 <button
                   className="create-project-button review-save"
                   disabled={saving}
@@ -896,6 +970,9 @@ export function ReviewScreen({
     </AppLayout>
   );
 }
+
+const toAlignment = (value: string | null | undefined): "left" | "center" | "right" =>
+  value === "left" || value === "right" ? value : "center";
 
 export function TypesettingScreen({
   session,
@@ -915,6 +992,7 @@ export function TypesettingScreen({
   const [regionId, setRegionId] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [fontSize, setFontSize] = useState(24);
+  const [alignment, setAlignment] = useState<"left" | "center" | "right">("center");
   const [compareOriginal, setCompareOriginal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -959,7 +1037,22 @@ export function TypesettingScreen({
     setRegionId(first?.id ?? null);
     setText(first?.translated_text ?? "");
     setFontSize(first?.font_size ?? 24);
+    setAlignment(toAlignment(first?.alignment));
   }, [page?.id]);
+
+  // ← / → flip pages unless the user is typing in a form field.
+  const pageCount = chapter?.pages.length ?? 0;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (target?.isContentEditable || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "ArrowLeft") setPageIndex((index) => Math.max(0, index - 1));
+      if (event.key === "ArrowRight") setPageIndex((index) => Math.min(pageCount - 1, index + 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pageCount]);
 
   const saveAndRender = async () => {
     if (!page || !selectedRegion) return;
@@ -967,7 +1060,7 @@ export function TypesettingScreen({
     setError("");
     setMessage("");
     try {
-      const updated = await typesetPage(page.id, selectedRegion.id, text, fontSize);
+      const updated = await typesetPage(page.id, selectedRegion.id, text, fontSize, alignment);
       setChapter((current) =>
         current
           ? {
@@ -1050,6 +1143,12 @@ export function TypesettingScreen({
               >
                 Next →
               </button>
+              {page.rendered_url && (
+                <a className="download-page-button" href={`${API_ORIGIN}${pageDownloadUrl(page.id)}`} download>
+                  ⇩ Download Page
+                </a>
+              )}
+              <small className="muted">Tip: use ← / → to flip pages</small>
               <label>
                 <input
                   type="checkbox"
@@ -1090,6 +1189,7 @@ export function TypesettingScreen({
                               setRegionId(region.id);
                               setText(region.translated_text);
                               setFontSize(region.font_size ?? 24);
+                              setAlignment(toAlignment(region.alignment));
                             }}
                             style={{
                               left: `${(x / imageSize.width) * 100}%`,
@@ -1123,6 +1223,7 @@ export function TypesettingScreen({
                     setRegionId(next?.id ?? null);
                     setText(next?.translated_text ?? "");
                     setFontSize(next?.font_size ?? 24);
+                    setAlignment(toAlignment(next?.alignment));
                   }}
                 >
                   {page.regions.map((region) => (
@@ -1159,6 +1260,20 @@ export function TypesettingScreen({
                       value={fontSize}
                       onChange={(event) => setFontSize(Number(event.target.value))}
                     />
+                    <span className="field-label">Alignment</span>
+                    <div className="alignment-group" role="group" aria-label="Text alignment">
+                      {(["left", "center", "right"] as const).map((option) => (
+                        <button
+                          type="button"
+                          key={option}
+                          className={alignment === option ? "active" : ""}
+                          aria-pressed={alignment === option}
+                          onClick={() => setAlignment(option)}
+                        >
+                          {option === "left" ? "⇤ Left" : option === "right" ? "Right ⇥" : "↔ Center"}
+                        </button>
+                      ))}
+                    </div>
                     <button
                       className="create-project-button full-width"
                       disabled={saving || !text.trim()}
