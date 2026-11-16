@@ -1184,6 +1184,7 @@ def restore_bubble(request: BubbleRestoreRequest) -> dict:
             original_text=request.original_text.strip(),
             translated_text=request.translated_text.strip(),
             font_size=request.font_size,
+            alignment=request.alignment,
         )
         db.add(region)
         db.commit()
@@ -1207,6 +1208,7 @@ def delete_bubble(region_id: int) -> dict:
             "original_text": region.original_text or "",
             "translated_text": region.translated_text or "",
             "font_size": region.font_size,
+            "alignment": region.alignment,
         }
         db.delete(region)
         db.commit()

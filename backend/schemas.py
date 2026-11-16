@@ -37,6 +37,7 @@ class BubbleRestoreRequest(BubbleCreateRequest):
     page_id: int
     translated_text: str = ""
     font_size: float | None = Field(default=None, gt=0)
+    alignment: Literal["left", "center", "right"] | None = None
 
 
 class TypesettingUpdateRequest(BaseModel):

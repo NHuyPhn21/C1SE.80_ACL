@@ -1,53 +1,66 @@
-"""Task 5: review draft/flag endpoints and typesetting alignment."""
+"""Task 3 & Task 5: review draft/flag endpoints, password reset endpoints, and typesetting alignment."""
 
 import json
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.api import flag_page, reset_password, save_page_ocr_draft, verify_reset_token
 from backend.database import Base
 from backend.models import Chapter, ComicPage, Project, TextRegion, User
-from fastapi_app import app
+from backend.schemas import (
+    OcrDraftRequest,
+    ResetPasswordRequest,
+    TypesettingUpdateRequest,
+    VerifyResetTokenRequest,
+)
 from services.review_service import ReviewServiceError
 from services.typesetting_service import TypesettingServiceError, save_translation_and_render
 
 
 class ReviewEndpointTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.client = TestClient(app)
-
     @patch("backend.api._page_response", return_value={"id": 5, "status": "REVIEW_DRAFT"})
     @patch("backend.api.save_ocr_draft", return_value=1)
     def test_ocr_draft_endpoint_saves_without_translating(self, save, _page) -> None:
-        response = self.client.post("/api/pages/5/ocr-draft", json={"regions": {"3": "  hello "}})
-        self.assertEqual(response.status_code, 200)
+        result = save_page_ocr_draft(5, OcrDraftRequest(regions={3: "  hello "}))
         save.assert_called_once_with(5, {3: "  hello "})
-        self.assertEqual(response.json()["status"], "REVIEW_DRAFT")
+        self.assertEqual(result["status"], "REVIEW_DRAFT")
 
     @patch("backend.api.save_ocr_draft", side_effect=ReviewServiceError("Page not found."))
     def test_ocr_draft_missing_page_is_404(self, _save) -> None:
-        self.assertEqual(
-            self.client.post("/api/pages/9/ocr-draft", json={"regions": {}}).status_code, 404
-        )
+        with self.assertRaises(HTTPException) as ctx:
+            save_page_ocr_draft(9, OcrDraftRequest(regions={}))
+        self.assertEqual(ctx.exception.status_code, 404)
 
     @patch("backend.api._page_response", return_value={"id": 5, "status": "NEEDS_REVIEW"})
     @patch("backend.api.flag_page_for_second_review")
     def test_flag_endpoint(self, flag, _page) -> None:
-        response = self.client.post("/api/pages/5/flag")
-        self.assertEqual(response.status_code, 200)
+        result = flag_page(5)
         flag.assert_called_once_with(5)
-        self.assertEqual(response.json()["status"], "NEEDS_REVIEW")
+        self.assertEqual(result["status"], "NEEDS_REVIEW")
 
     def test_typeset_rejects_unknown_alignment(self) -> None:
-        response = self.client.post(
-            "/api/pages/1/typeset",
-            json={"region_id": 1, "translated_text": "x", "alignment": "justify"},
-        )
-        self.assertEqual(response.status_code, 422)
+        with self.assertRaises(ValidationError):
+            TypesettingUpdateRequest(
+                region_id=1,
+                translated_text="x",
+                alignment="justify",  # type: ignore[arg-type]
+            )
+
+    @patch("backend.api.SqliteAuthService")
+    def test_verify_and_reset_password_endpoints(self, mock_auth_cls) -> None:
+        mock_auth_cls.return_value.verify_password_reset_token.return_value = True
+        verified = verify_reset_token(VerifyResetTokenRequest(token="tok-123"))
+        self.assertEqual(verified, {"valid": True})
+
+        res = reset_password(ResetPasswordRequest(token="tok-123", new_password="newpassword123"))
+        mock_auth_cls.return_value.reset_password.assert_called_once_with("tok-123", "newpassword123")
+        self.assertEqual(res["message"], "Password reset successfully.")
 
 
 class TypesettingAlignmentTests(unittest.TestCase):
@@ -84,8 +97,13 @@ class TypesettingAlignmentTests(unittest.TestCase):
             session_factory=self.factory,
             renderer=lambda **_: str(BASE_DIR / "data" / "rendered_pages" / "x.png"),
         )
-        region = self.factory().query(TextRegion).get(self.region_id)
-        self.assertEqual((region.alignment, region.font_size), ("right", 20))
+        db = self.factory()
+        try:
+            region = db.get(TextRegion, self.region_id)
+            assert region is not None
+            self.assertEqual((region.alignment, region.font_size), ("right", 20))
+        finally:
+            db.close()
 
     def test_invalid_alignment_rejected(self) -> None:
         with self.assertRaises(TypesettingServiceError):

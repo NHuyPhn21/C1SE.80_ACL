@@ -2,15 +2,24 @@
 import { FormEvent, useEffect, useState } from "react";
 import { resetPassword, verifyResetToken } from "../../api";
 
-export function ResetPasswordScreen() {
+export function ResetPasswordScreen({ onBackToLogin }: { onBackToLogin?: () => void }) {
   const token = new URLSearchParams(window.location.search).get("token") ?? "";
 
   const [tokenStatus, setTokenStatus] = useState<"checking" | "valid" | "invalid">("checking");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+
+  const goBackToLogin = () => {
+    if (onBackToLogin) {
+      onBackToLogin();
+    } else {
+      window.location.assign("/");
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -64,76 +73,129 @@ export function ResetPasswordScreen() {
 
   return (
     <main className="auth-page">
+      <section className="auth-rail">
+        <div>
+          <div className="auth-brand">
+            <span className="auth-brand-icon">✣</span>
+            <strong>ACL</strong>
+          </div>
+          <p className="auth-subtitle">Automated Comic Localization</p>
+          <div className="version-pill">
+            <span /> v2.4 Editorial Core <b>•</b> Engine Online
+          </div>
+        </div>
+        <div className="auth-promise">
+          <span className="auth-kicker">ACCOUNT RECOVERY</span>
+          <h1>
+            Securely reset
+            <br />
+            your workspace
+            <br />
+            credentials.
+          </h1>
+          <ul>
+            <li>Single-use cryptographic recovery token</li>
+            <li>Instant access restoration across all projects</li>
+            <li>Protected with salted password hashing</li>
+          </ul>
+        </div>
+        <footer>
+          © 2026 Team C1SE.80 <span>Terms　 ·　 Privacy</span>
+        </footer>
+      </section>
+
       <section className="auth-main">
-        <form className="login-card" onSubmit={handleSubmit}>
-          <h2>Reset your password</h2>
-          <p className="login-intro">Enter and confirm your new password.</p>
+        <div className="environment-pill">
+          <span /> Cluster: US-East Production <b>?</b>
+        </div>
+        <form className="login-card forgot-card" onSubmit={handleSubmit}>
+          <button type="button" className="back-login" onClick={goBackToLogin}>
+            ← Back to log in
+          </button>
+          <div className="reset-icon">⚿</div>
+          <h2>Set a new password</h2>
+          <p className="login-intro">
+            Choose a strong password (at least 8 characters) for your ACL account.
+          </p>
 
           {success ? (
             <>
               <div className="reset-success">
-                Your password has been reset successfully.
+                ✓　Your password has been reset successfully. You can now sign in with your new
+                password.
               </div>
-              <button
-                type="button"
-                className="login-button"
-                onClick={() => window.location.assign("/")}
-              >
-                Back to log in
+              <button type="button" className="login-button" onClick={goBackToLogin}>
+                Back to log in →
               </button>
             </>
           ) : tokenStatus === "checking" ? (
-            <p>Verifying your reset link...</p>
+            <p className="muted">Verifying your reset link...</p>
           ) : tokenStatus === "invalid" ? (
             <>
               <div className="auth-error">
-                {error || "This reset link is invalid or has expired."}
+                <strong>!</strong>
+                <span>{error || "This reset link is invalid or has expired."}</span>
               </div>
-              <button
-                type="button"
-                className="login-button"
-                onClick={() => window.location.assign("/")}
-              >
-                Request a new reset link
+              <button type="button" className="login-button" onClick={goBackToLogin}>
+                Back to log in →
               </button>
             </>
           ) : (
             <>
-              {error && <div className="auth-error">{error}</div>}
+              {error && (
+                <div className="auth-error">
+                  <strong>!</strong>
+                  <span>{error}</span>
+                </div>
+              )}
 
-              <label htmlFor="new-password">New password</label>
-              <div className="auth-input">
+              <div className="password-label">
+                <label htmlFor="new-password">New password</label>
+                <small>At least 8 characters</small>
+              </div>
+              <div className={`auth-input ${error ? "has-error" : ""}`}>
                 <input
                   id="new-password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   minLength={8}
                   autoComplete="new-password"
                   required
                 />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((value) => !value)}
+                >
+                  {showPassword ? "◉" : "⊙"}
+                </button>
               </div>
 
-              <label htmlFor="confirm-new-password">
+              <label className="password-label plain-label" htmlFor="confirm-new-password">
                 Confirm new password
               </label>
-              <div className="auth-input">
+              <div className={`auth-input ${error ? "has-error" : ""}`}>
                 <input
                   id="confirm-new-password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
+                  minLength={8}
                   autoComplete="new-password"
                   required
                 />
               </div>
 
               <button className="login-button" disabled={busy}>
-                {busy ? "Processing..." : "Reset password"}
+                {busy ? "Processing..." : "Reset password →"}
               </button>
             </>
           )}
         </form>
+        <div className="auth-build">
+          ● ACL-Engine v2.4 (Build 8821)　|　Target: Japanese / English Dual-Stack
+        </div>
       </section>
     </main>
   );

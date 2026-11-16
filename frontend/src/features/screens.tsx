@@ -409,6 +409,19 @@ export function ReviewScreen({
     setActiveRegionId(null);
   }, [page?.id]);
 
+  const reviewPageCount = chapter?.pages.length ?? 0;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (target?.isContentEditable || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "ArrowLeft") setPageIndex((index) => Math.max(0, index - 1));
+      if (event.key === "ArrowRight") setPageIndex((index) => Math.min(reviewPageCount - 1, index + 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [reviewPageCount]);
+
   const updateOriginal = (regionId: number, text: string) => {
     if (!chapter || !page) return;
     setChapter({
@@ -824,6 +837,12 @@ export function ReviewScreen({
               </button>
               <span>
                 Page {pageIndex + 1} of {chapter?.pages.length}
+                {page.status === "NEEDS_REVIEW" && (
+                  <b className="page-flag"> • ⚑ Needs second review</b>
+                )}
+                {page.status === "REVIEW_DRAFT" && (
+                  <b className="page-flag draft"> • ✎ Draft saved</b>
+                )}
               </span>
               <button
                 disabled={pageIndex >= (chapter?.pages.length ?? 1) - 1}
@@ -937,6 +956,7 @@ export function ReviewScreen({
                     <textarea
                       id={`ocr-region-${region.id}`}
                       value={region.original_text}
+                      onFocus={() => setActiveRegionId(region.id)}
                       onChange={(event) => updateOriginal(region.id, event.target.value)}
                     />
                     <span>
@@ -1136,6 +1156,12 @@ export function TypesettingScreen({
               </button>
               <span>
                 Page {pageIndex + 1} of {chapter?.pages.length}
+                {page.status === "NEEDS_REVIEW" && (
+                  <b className="page-flag"> • ⚑ Needs second review</b>
+                )}
+                {page.status === "REVIEW_DRAFT" && (
+                  <b className="page-flag draft"> • ✎ Draft saved</b>
+                )}
               </span>
               <button
                 disabled={pageIndex >= (chapter?.pages.length ?? 1) - 1}

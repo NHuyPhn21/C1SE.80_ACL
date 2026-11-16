@@ -399,9 +399,10 @@ def render_translated_text_on_page(
 
                 line_spacing = max(2, int(size * 0.18))
                 full_text = "\n".join(lines)
+                alignment = region.alignment if region.alignment in ("left", "right") else "center"
 
                 t_left, t_top, t_right, t_bottom = draw.multiline_textbbox(
-                    (0, 0), full_text, font=font, spacing=line_spacing, align="center"
+                    (0, 0), full_text, font=font, spacing=line_spacing, align=alignment
                 )
                 actual_w = t_right - t_left
                 actual_h = t_bottom - t_top
