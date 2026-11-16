@@ -881,19 +881,31 @@ def export_project_queue(project_id: int, chapter_id: int | None = None):
         entries = QueueService().rendered_entries(chapter_id=chapter_id, project_id=project_id)
         if not entries:
             raise HTTPException(status_code=404, detail="No rendered pages available")
-        labelled = [
-            (f"Chapter {chapter.chapter_number}" + (f" - {chapter.chapter_name}" if chapter.chapter_name else ""), path)
-            for chapter, path in entries
-        ]
+        labelled = []
+        for chapter, path in entries:
+            base_label = f"Chapter {chapter.chapter_number}"
+            custom_name = (chapter.chapter_name or "").strip()
+            if custom_name and custom_name.lower() != base_label.lower():
+                label = f"{base_label} - {custom_name}"
+            else:
+                label = base_label
+            labelled.append((label, path))
         archive = build_rendered_zip(
             [path for _, path in labelled],
             manifest=build_release_manifest(project.title, labelled),
         )
-        filename = quote(f"{project.title}{suffix}-rendered.zip")
+        raw_filename = f"{project.title}{suffix}-rendered.zip"
+        ascii_filename = "".join(ch if ch.isascii() and ch not in '"\\/' else "_" for ch in raw_filename)
+        encoded_filename = quote(raw_filename)
         return StreamingResponse(
             iter([archive]),
             media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{ascii_filename}"; '
+                    f"filename*=UTF-8''{encoded_filename}"
+                )
+            },
         )
     finally:
         db.close()
@@ -914,15 +926,16 @@ async def upload_page(
     db = SessionLocal()
     try:
         chapter = _ensure_chapter(db, chapter_id)
-        page_count = (
-            db.query(ComicPage)
+        max_page_num = (
+            db.query(func.max(ComicPage.page_number))
             .filter(ComicPage.chapter_id == chapter.id)
-            .count()
+            .scalar()
+            or 0
         )
         relative_path = target.relative_to(BASE_DIR).as_posix()
         page = ComicPage(
             chapter_id=chapter.id,
-            page_number=page_count + 1,
+            page_number=max_page_num + 1,
             original_path=relative_path,
             status="PROCESSING",
         )
