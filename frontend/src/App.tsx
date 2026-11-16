@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ProjectSummary } from "./api";
 import type { ScreenName } from "./components/AppLayout";
 import { AuthScreen, type AuthSession } from "./features/auth/AuthScreen";
+import { ResetPasswordScreen } from "./features/auth/ResetPasswordScreen";
 import {
   ChapterScreen,
   QueueScreen,
@@ -39,6 +40,10 @@ export default function App() {
     }
     setScreen(nextScreen);
   };
+
+   if (window.location.pathname === "/reset-password") {
+    return <ResetPasswordScreen />;
+  }
 
   if (!session) {
     return (

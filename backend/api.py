@@ -15,6 +15,8 @@ from backend.database import SessionLocal, init_db
 from backend.image_utils import BASE_DIR, resolve_project_path
 from backend.models import ApiKeyConfig, Chapter, ComicPage, CustomGlossary, Project, ProjectMembership, QueueTask, SystemLog, TextRegion, User
 from backend.schemas import (
+    VerifyResetTokenRequest,
+    ResetPasswordRequest,
     BubbleUpdateRequest,
     BubbleCreateRequest,
     BubbleRestoreRequest,
@@ -209,6 +211,30 @@ def forgot_password(request: ForgotPasswordRequest) -> dict:
         }
     except (AuthServiceError, PasswordResetDeliveryError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/verify-reset-token")
+def verify_reset_token(request: VerifyResetTokenRequest) -> dict:
+    try:
+        valid = SqliteAuthService().verify_password_reset_token(
+            request.token
+        )
+        return {"valid": valid}
+    except AuthServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/reset-password")
+def reset_password(request: ResetPasswordRequest) -> dict:
+    try:
+        SqliteAuthService().reset_password(
+            request.token,
+            request.new_password,
+        )
+        return {"message": "Password reset successfully."}
+    except AuthServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 
 
 def _project_owner_id(project_id: int) -> int:
