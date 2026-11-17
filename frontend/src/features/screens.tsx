@@ -1592,17 +1592,45 @@ export function ChapterScreen({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  const MAX_BATCH_PAGES = 50;
+  const MAX_BATCH_BYTES = 100 * 1024 * 1024; // 100MB
+
   const selectFiles = (selected: FileList | null) => {
     if (!selected) return;
+    setError("");
     const valid = Array.from(selected).filter((file) => /\.(jpe?g|png|webp)$/i.test(file.name));
     if (valid.length !== selected.length) {
       setError("Only JPG, JPEG, PNG and WEBP files are supported.");
     }
-    setFiles((current) => [...current, ...valid]);
+    const combined = [...files, ...valid];
+    if (combined.length > MAX_BATCH_PAGES) {
+      setError(`Cannot exceed ${MAX_BATCH_PAGES} pages per chapter batch (selected: ${combined.length} files).`);
+      return;
+    }
+    const totalBytes = combined.reduce((sum, item) => sum + item.size, 0);
+    if (totalBytes > MAX_BATCH_BYTES) {
+      setError(`Total batch size exceeds 100MB limit (${(totalBytes / 1024 / 1024).toFixed(1)} MB).`);
+      return;
+    }
+    setFiles(combined);
+  };
+
+  const removeFile = (indexToRemove: number) => {
+    setFiles((current) => current.filter((_, idx) => idx !== indexToRemove));
+    setError("");
   };
 
   const createAndUpload = async () => {
     if (!files.length) return;
+    if (files.length > MAX_BATCH_PAGES) {
+      setError(`Cannot exceed ${MAX_BATCH_PAGES} pages per chapter batch.`);
+      return;
+    }
+    const totalBytes = files.reduce((sum, item) => sum + item.size, 0);
+    if (totalBytes > MAX_BATCH_BYTES) {
+      setError(`Total batch size exceeds 100MB limit (${(totalBytes / 1024 / 1024).toFixed(1)} MB).`);
+      return;
+    }
     setBusy(true);
     setError("");
     const pendingFiles = [...files];
@@ -1764,6 +1792,24 @@ export function ChapterScreen({
                 <strong>{file.name}</strong>
                 <small>({(file.size / 1024 / 1024).toFixed(1)} MB)</small>
                 <em>✓ Ready for detection</em>
+                <button
+                  type="button"
+                  title={`Remove ${file.name}`}
+                  onClick={() => removeFile(index)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#C1382E",
+                    cursor: "pointer",
+                    fontSize: "15px",
+                    fontWeight: "bold",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    marginLeft: "8px",
+                  }}
+                >
+                  ✕
+                </button>
               </div>
             ))
           )}
