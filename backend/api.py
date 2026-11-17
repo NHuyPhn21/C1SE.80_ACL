@@ -37,7 +37,7 @@ from services.workspace_service import WorkspaceService, WorkspaceServiceError
 from services.team_service import TeamService, TeamServiceError
 from services.queue_service import QueueService, build_rendered_zip
 from services.typesetting_service import TypesettingServiceError, save_translation_and_render
-from services.settings_service import SettingsService
+from services.settings_service import SettingsService, SettingsServiceError
 from backend.queue_worker import submit_pipeline_task
 
 
