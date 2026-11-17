@@ -1,4 +1,4 @@
-"""FastAPI API for the ACL localization pipeline."""
+﻿"""FastAPI API for the ACL localization pipeline."""
 
 import json
 import os
@@ -877,9 +877,29 @@ def start_project_queue(project_id: int, request: QueueStartRequest) -> dict:
             Chapter.id == request.chapter_id,
             Chapter.project_id == project_id,
         ).first()
+
         if chapter is None:
             raise HTTPException(status_code=404, detail="Chapter not found")
-        task = QueueTask(chapter_id=chapter.id, status="QUEUED", progress_percent=0)
+
+        try:
+            SettingsService().consume_project_quota(
+                project_id=project_id,
+                action="queue_start",
+            )
+        except SettingsServiceError as exc:
+            if str(exc) == "Monthly AI processing quota exceeded.":
+                raise HTTPException(
+                    status_code=429,
+                    detail="Monthly AI processing quota exceeded. Please try again next month.",
+                ) from exc
+            raise
+
+        task = QueueTask(
+            chapter_id=chapter.id,
+            status="QUEUED",
+            progress_percent=0,
+        )
+
         db.add(task)
         db.flush()
         db.add(SystemLog(task_id=task.id, level="INFO", message="Pipeline queued."))
@@ -1005,10 +1025,14 @@ def translate_page(request: TranslationRequest) -> dict:
     db = SessionLocal()
     try:
         page = db.query(ComicPage).filter(ComicPage.id == request.page_id).first()
+
         if page is None:
             raise HTTPException(status_code=404, detail="Page not found")
 
+
+
         regions = {
+
             region.id: region
             for region in db.query(TextRegion)
             .filter(TextRegion.page_id == page.id)
@@ -1027,6 +1051,19 @@ def translate_page(request: TranslationRequest) -> dict:
             source[str(region_id)] = region.original_text
 
         if source:
+            try:
+                SettingsService().consume_project_quota(
+                    project_id=page.chapter.project_id,
+                    action="translate",
+                )
+            except SettingsServiceError as exc:
+                if str(exc) == "Monthly AI processing quota exceeded.":
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Monthly AI processing quota exceeded. Please try again next month.",
+                    ) from exc
+                raise
+
             from ai_core.translator import translate_batch_dict
 
             translated = translate_batch_dict(source, project_id=page.chapter.project_id)
@@ -1036,7 +1073,7 @@ def translate_page(request: TranslationRequest) -> dict:
                     region.translated_text = text.strip()
         db.commit()
 
-        # Phase 2: sau khi dịch xong, tự động chạy Inpainting + Typesetting
+        # Phase 2: sau khi dá»‹ch xong, tá»± Ä‘á»™ng cháº¡y Inpainting + Typesetting
         from backend.image_utils import process_comic_page, DEFAULT_FONT_PATH, BASE_DIR
 
         final_output_path = process_comic_page(
@@ -1052,6 +1089,7 @@ def translate_page(request: TranslationRequest) -> dict:
         db.refresh(page)
         return _serialize_page(page)
     except HTTPException:
+        db.rollback()
         raise
     except Exception as exc:
         db.rollback()

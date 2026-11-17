@@ -6,6 +6,7 @@ import hashlib
 import os
 import secrets
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -14,6 +15,7 @@ from sqlalchemy import or_
 from backend.database import SessionLocal, init_db
 from backend.models import (
     ApiKeyConfig,
+    ApiUsage,
     Chapter,
     ComicPage,
     CustomGlossary,
@@ -329,6 +331,115 @@ class SettingsService:
         finally:
             db.close()
 
+
+    def get_project_quota_usage(self, project_id: int) -> dict:
+        """Count accepted AI processing requests in the current UTC month."""
+        monthly_limit = max(
+            1,
+            int(os.getenv("ACL_MONTHLY_QUOTA", "500")),
+        )
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        month_start = datetime(now.year, now.month, 1)
+
+        if now.month == 12:
+            next_month = datetime(now.year + 1, 1, 1)
+        else:
+            next_month = datetime(now.year, now.month + 1, 1)
+
+        db = self.session_factory()
+        try:
+            requests_this_month = (
+                db.query(ApiUsage)
+                .filter(
+                    ApiUsage.project_id == project_id,
+                    ApiUsage.created_at >= month_start,
+                    ApiUsage.created_at < next_month,
+                )
+                .count()
+            )
+
+            return {
+                "project_id": project_id,
+                "requests_this_month": requests_this_month,
+                "monthly_limit": monthly_limit,
+                "remaining": max(
+                    0, monthly_limit - requests_this_month
+                ),
+                "quota_exceeded": requests_this_month >= monthly_limit,
+            }
+        finally:
+            db.close()
+
+
+    def consume_project_quota(
+        self,
+        project_id: int,
+        action: str,
+    ) -> dict:
+        """Check and record one AI processing request."""
+
+        if action not in ("translate", "queue_start"):
+            raise ValueError("Unsupported quota action")
+
+        monthly_limit = max(
+            1,
+            int(os.getenv("ACL_MONTHLY_QUOTA", "500")),
+        )
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        month_start = datetime(now.year, now.month, 1)
+
+        if now.month == 12:
+            next_month = datetime(now.year + 1, 1, 1)
+        else:
+            next_month = datetime(now.year, now.month + 1, 1)
+
+        db = self.session_factory()
+
+        try:
+            # Acquire SQLite write lock before checking quota.
+            if db.bind.dialect.name == "sqlite":
+                db.connection().exec_driver_sql("BEGIN IMMEDIATE")
+
+            usage_count = (
+                db.query(ApiUsage)
+                .filter(
+                    ApiUsage.project_id == project_id,
+                    ApiUsage.created_at >= month_start,
+                    ApiUsage.created_at < next_month,
+                )
+                .count()
+            )
+
+            if usage_count >= monthly_limit:
+                raise SettingsServiceError(
+                    "Monthly AI processing quota exceeded."
+                )
+
+            usage = ApiUsage(
+                project_id=project_id,
+                action=action,
+                created_at=now,
+            )
+            db.add(usage)
+            db.commit()
+
+            return {
+                "project_id": project_id,
+                "requests_this_month": usage_count + 1,
+                "monthly_limit": monthly_limit,
+                "remaining": max(
+                    0,
+                    monthly_limit - usage_count - 1,
+                ),
+            }
+
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
 def project_for_user(
     session_factory,
