@@ -1,7 +1,8 @@
-"""FastAPI API for the ACL localization pipeline."""
+﻿"""FastAPI API for the ACL localization pipeline."""
 
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -849,7 +850,7 @@ def _serialize_queue(db: Session, project_id: int, chapter_id: int | None = None
         ],
         "logs": [
             {"level": log.level, "message": log.message, "timestamp": log.timestamp.isoformat()}
-            for log in (task.logs[:30] if task else [])
+            for log in (sorted(task.logs, key=lambda item: item.id)[-30:] if task else [])
         ],
     }
 
@@ -869,6 +870,62 @@ def get_project_queue(project_id: int, chapter_id: int | None = None) -> dict:
         db.close()
 
 
+TERMINAL_TASK_STATUSES = {"COMPLETED", "FAILED", "AWAITING_REVIEW"}
+QUEUE_STREAM_POLL_SECONDS = 1.0
+QUEUE_STREAM_HEARTBEAT_SECONDS = 15.0
+QUEUE_STREAM_MAX_SECONDS = 30 * 60
+
+
+def _queue_event_stream(project_id: int, chapter_id: int | None):
+    """Yield SSE frames whenever the queue snapshot (task, pages or logs) changes.
+
+    The stream ends with an ``event: done`` frame once the task reaches a
+    terminal status, so the browser can stop listening instead of polling.
+    """
+    last_payload = None
+    last_sent = time.monotonic()
+    started = last_sent
+    while time.monotonic() - started < QUEUE_STREAM_MAX_SECONDS:
+        db = SessionLocal()
+        try:
+            snapshot = _serialize_queue(db, project_id, chapter_id)
+        finally:
+            db.close()
+        payload = json.dumps(snapshot, sort_keys=True)
+        task = snapshot["task"]
+        terminal = bool(task and task["status"] in TERMINAL_TASK_STATUSES)
+        if payload != last_payload:
+            last_payload = payload
+            last_sent = time.monotonic()
+            yield f"data: {payload}\n\n"
+        elif time.monotonic() - last_sent >= QUEUE_STREAM_HEARTBEAT_SECONDS:
+            last_sent = time.monotonic()
+            yield ": keepalive\n\n"
+        if terminal:
+            yield "event: done\ndata: {}\n\n"
+            return
+        time.sleep(QUEUE_STREAM_POLL_SECONDS)
+
+
+@router.get("/projects/{project_id}/queue/stream")
+def stream_project_queue(project_id: int, chapter_id: int | None = None):
+    db = SessionLocal()
+    try:
+        if db.query(Project).filter(Project.id == project_id).first() is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if chapter_id is not None and db.query(Chapter).filter(
+            Chapter.id == chapter_id, Chapter.project_id == project_id
+        ).first() is None:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+    finally:
+        db.close()
+    return StreamingResponse(
+        _queue_event_stream(project_id, chapter_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/projects/{project_id}/queue/start")
 def start_project_queue(project_id: int, request: QueueStartRequest) -> dict:
     db = SessionLocal()
@@ -877,9 +934,29 @@ def start_project_queue(project_id: int, request: QueueStartRequest) -> dict:
             Chapter.id == request.chapter_id,
             Chapter.project_id == project_id,
         ).first()
+
         if chapter is None:
             raise HTTPException(status_code=404, detail="Chapter not found")
-        task = QueueTask(chapter_id=chapter.id, status="QUEUED", progress_percent=0)
+
+        try:
+            SettingsService().consume_project_quota(
+                project_id=project_id,
+                action="queue_start",
+            )
+        except SettingsServiceError as exc:
+            if str(exc) == "Monthly AI processing quota exceeded.":
+                raise HTTPException(
+                    status_code=429,
+                    detail="Monthly AI processing quota exceeded. Please try again next month.",
+                ) from exc
+            raise
+
+        task = QueueTask(
+            chapter_id=chapter.id,
+            status="QUEUED",
+            progress_percent=0,
+        )
+
         db.add(task)
         db.flush()
         db.add(SystemLog(task_id=task.id, level="INFO", message="Pipeline queued."))
@@ -1005,10 +1082,14 @@ def translate_page(request: TranslationRequest) -> dict:
     db = SessionLocal()
     try:
         page = db.query(ComicPage).filter(ComicPage.id == request.page_id).first()
+
         if page is None:
             raise HTTPException(status_code=404, detail="Page not found")
 
+
+
         regions = {
+
             region.id: region
             for region in db.query(TextRegion)
             .filter(TextRegion.page_id == page.id)
@@ -1027,6 +1108,19 @@ def translate_page(request: TranslationRequest) -> dict:
             source[str(region_id)] = region.original_text
 
         if source:
+            try:
+                SettingsService().consume_project_quota(
+                    project_id=page.chapter.project_id,
+                    action="translate",
+                )
+            except SettingsServiceError as exc:
+                if str(exc) == "Monthly AI processing quota exceeded.":
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Monthly AI processing quota exceeded. Please try again next month.",
+                    ) from exc
+                raise
+
             from ai_core.translator import translate_batch_dict
 
             translated = translate_batch_dict(source, project_id=page.chapter.project_id)
@@ -1036,7 +1130,7 @@ def translate_page(request: TranslationRequest) -> dict:
                     region.translated_text = text.strip()
         db.commit()
 
-        # Phase 2: sau khi dịch xong, tự động chạy Inpainting + Typesetting
+        # Phase 2: sau khi dá»‹ch xong, tá»± Ä‘á»™ng cháº¡y Inpainting + Typesetting
         from backend.image_utils import process_comic_page, DEFAULT_FONT_PATH, BASE_DIR
 
         final_output_path = process_comic_page(
@@ -1052,6 +1146,7 @@ def translate_page(request: TranslationRequest) -> dict:
         db.refresh(page)
         return _serialize_page(page)
     except HTTPException:
+        db.rollback()
         raise
     except Exception as exc:
         db.rollback()
