@@ -4,10 +4,9 @@ import json
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from backend import api
-from fastapi_app import app
 
 
 def snap(status, progress, logs=0):
@@ -47,8 +46,9 @@ class QueueStreamTests(unittest.TestCase):
         self.assertEqual(frames[-1], "event: done\ndata: {}\n\n")
 
     def test_endpoint_unknown_project_is_404(self) -> None:
-        response = TestClient(app).get("/api/projects/999999/queue/stream")
-        self.assertEqual(response.status_code, 404)
+        with self.assertRaises(HTTPException) as ctx:
+            api.stream_project_queue(999999)
+        self.assertEqual(ctx.exception.status_code, 404)
 
 
 if __name__ == "__main__":

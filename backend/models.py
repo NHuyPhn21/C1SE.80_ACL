@@ -53,6 +53,7 @@ class Project(Base):
     api_keys = relationship("ApiKeyConfig", back_populates="project", cascade="all, delete-orphan")
     glossaries = relationship("CustomGlossary", back_populates="project", cascade="all, delete-orphan")
     chapters = relationship("Chapter", back_populates="project", cascade="all, delete-orphan")
+    api_usages = relationship("ApiUsage", back_populates="project", cascade="all, delete-orphan")
 
 class ProjectMembership(Base):
     __tablename__ = 'project_memberships'
@@ -172,3 +173,5 @@ class ApiUsage(Base):
     )
     action = Column(String(50), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    project = relationship("Project", back_populates="api_usages")
