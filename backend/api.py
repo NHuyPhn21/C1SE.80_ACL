@@ -1,4 +1,4 @@
-﻿"""FastAPI API for the ACL localization pipeline."""
+"""FastAPI API for the ACL localization pipeline."""
 
 import json
 import os
@@ -948,6 +948,7 @@ def start_project_queue(project_id: int, request: QueueStartRequest) -> dict:
                 raise HTTPException(
                     status_code=429,
                     detail="Monthly AI processing quota exceeded. Please try again next month.",
+                    headers={"Retry-After": "3600"},
                 ) from exc
             raise
 
@@ -1118,6 +1119,7 @@ def translate_page(request: TranslationRequest) -> dict:
                     raise HTTPException(
                         status_code=429,
                         detail="Monthly AI processing quota exceeded. Please try again next month.",
+                        headers={"Retry-After": "3600"},
                     ) from exc
                 raise
 
@@ -1130,7 +1132,7 @@ def translate_page(request: TranslationRequest) -> dict:
                     region.translated_text = text.strip()
         db.commit()
 
-        # Phase 2: sau khi dá»‹ch xong, tá»± Ä‘á»™ng cháº¡y Inpainting + Typesetting
+        # Phase 2: sau khi dịch xong, tự động chạy Inpainting + Typesetting
         from backend.image_utils import process_comic_page, DEFAULT_FONT_PATH, BASE_DIR
 
         final_output_path = process_comic_page(

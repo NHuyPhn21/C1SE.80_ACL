@@ -320,7 +320,23 @@ class SettingsService:
                 .filter(CustomGlossary.project_id.in_(accessible_ids))
                 .count()
             )
-            requests_this_month = translated_bubbles + pipeline_tasks
+            now = datetime.now(UTC).replace(tzinfo=None)
+            month_start = datetime(now.year, now.month, 1)
+            next_month = (
+                datetime(now.year + 1, 1, 1)
+                if now.month == 12
+                else datetime(now.year, now.month + 1, 1)
+            )
+            api_usage_count = (
+                db.query(ApiUsage)
+                .filter(
+                    ApiUsage.project_id.in_(accessible_ids),
+                    ApiUsage.created_at >= month_start,
+                    ApiUsage.created_at < next_month,
+                )
+                .count()
+            )
+            requests_this_month = max(translated_bubbles + pipeline_tasks, api_usage_count)
             usage_percent = min(100, round((requests_this_month / monthly_limit) * 100))
             return {
                 "requests_this_month": requests_this_month,

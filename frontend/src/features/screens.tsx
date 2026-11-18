@@ -1832,7 +1832,10 @@ export function ChapterScreen({
             type="file"
             multiple
             accept=".jpg,.jpeg,.png,.webp"
-            onChange={(event) => selectFiles(event.target.files)}
+            onChange={(event) => {
+              selectFiles(event.target.files);
+              event.currentTarget.value = "";
+            }}
           />
         </label>
 
@@ -1856,19 +1859,9 @@ export function ChapterScreen({
                 <em>✓ Ready for detection</em>
                 <button
                   type="button"
+                  className="upload-remove-btn"
                   title={`Remove ${file.name}`}
                   onClick={() => removeFile(index)}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#C1382E",
-                    cursor: "pointer",
-                    fontSize: "15px",
-                    fontWeight: "bold",
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                    marginLeft: "8px",
-                  }}
                 >
                   ✕
                 </button>

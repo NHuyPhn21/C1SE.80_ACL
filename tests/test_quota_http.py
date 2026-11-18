@@ -1,18 +1,14 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
-from fastapi_app import app
+from backend.api import start_project_queue, translate_page
+from backend.schemas import QueueStartRequest, TranslationRequest
 from services.settings_service import SettingsServiceError
 
 
 class QuotaHttpTests(unittest.TestCase):
-
-    def setUp(self):
-        self.client = TestClient(app)
-
     @patch("backend.api.SettingsService")
     @patch("backend.api.SessionLocal")
     def test_queue_start_returns_429_when_quota_exceeded(
@@ -33,15 +29,13 @@ class QuotaHttpTests(unittest.TestCase):
             )
         )
 
-        response = self.client.post(
-            "/api/projects/1/queue/start",
-            json={"chapter_id": 10},
-        )
+        with self.assertRaises(HTTPException) as ctx:
+            start_project_queue(1, QueueStartRequest(chapter_id=10))
 
-        self.assertEqual(response.status_code, 429)
+        self.assertEqual(ctx.exception.status_code, 429)
         self.assertIn(
             "quota exceeded",
-            response.json()["detail"].lower(),
+            str(ctx.exception.detail).lower(),
         )
 
         db.add.assert_not_called()
@@ -57,14 +51,11 @@ class QuotaHttpTests(unittest.TestCase):
         db = session_local.return_value
         db.query.return_value.filter.return_value.first.return_value = None
 
-        response = self.client.post(
-            "/api/projects/1/queue/start",
-            json={"chapter_id": 999},
-        )
+        with self.assertRaises(HTTPException) as ctx:
+            start_project_queue(1, QueueStartRequest(chapter_id=999))
 
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(ctx.exception.status_code, 404)
         settings_service.return_value.consume_project_quota.assert_not_called()
-
 
     @patch("backend.api.SettingsService")
     @patch("backend.api.SessionLocal")
@@ -94,18 +85,13 @@ class QuotaHttpTests(unittest.TestCase):
             )
         )
 
-        response = self.client.post(
-            "/api/translate",
-            json={
-                "page_id": 10,
-                "regions": {"20": "Hello world"},
-            },
-        )
+        with self.assertRaises(HTTPException) as ctx:
+            translate_page(TranslationRequest(page_id=10, regions={20: "Hello world"}))
 
-        self.assertEqual(response.status_code, 429)
+        self.assertEqual(ctx.exception.status_code, 429)
         self.assertIn(
             "quota exceeded",
-            response.json()["detail"].lower(),
+            str(ctx.exception.detail).lower(),
         )
 
         settings_service.return_value.consume_project_quota.assert_called_once_with(
@@ -115,6 +101,7 @@ class QuotaHttpTests(unittest.TestCase):
 
         db.rollback.assert_called_once()
         db.commit.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

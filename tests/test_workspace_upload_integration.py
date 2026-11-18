@@ -10,20 +10,141 @@ Covers Leader's Task C specification:
 
 import io
 import json
+import re
+import shutil
 import unittest
 from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import backend.api as api_module
 from backend.database import Base
+from backend.image_utils import BASE_DIR
 from backend.models import Chapter, ComicPage, Project, ProjectMembership, QueueTask, TextRegion, User
-from fastapi_app import app
+from backend.schemas import ChapterCreateRequest, ProjectCreateRequest, ProjectUpdateRequest
 from services.team_service import TeamService
 from services.workspace_service import WorkspaceService
+
+
+class _TestResponse:
+    def __init__(self, status_code: int, payload: Any) -> None:
+        self.status_code = status_code
+        self._payload = payload
+        self.text = json.dumps(payload)
+
+    def json(self) -> Any:
+        return self._payload
+
+
+class _InMemoryUploadFile:
+    def __init__(self, filename: str, content: bytes) -> None:
+        self.filename = filename
+        self._content = content
+
+    async def read(self) -> bytes:
+        return self._content
+
+
+class _DirectTestClient:
+    """In-process dispatcher for backend.api routes that avoids socket/httpx version issues."""
+
+    def _call(self, fn, *args, **kwargs) -> _TestResponse:
+        try:
+            result = fn(*args, **kwargs)
+            return _TestResponse(200, result)
+        except HTTPException as exc:
+            return _TestResponse(exc.status_code, {"detail": exc.detail})
+
+    def post(
+        self,
+        url: str,
+        *,
+        json: dict | None = None,
+        params: dict | None = None,
+        files: dict | None = None,
+    ) -> _TestResponse:
+        parsed = urlparse(url)
+        path = parsed.path
+        qs = parse_qs(parsed.query)
+        user_id = int(qs["user_id"][0]) if "user_id" in qs else None
+
+        if path == "/api/projects":
+            assert user_id is not None and json is not None
+            return self._call(api_module.create_project, user_id, ProjectCreateRequest(**json))
+
+        m_chap = re.fullmatch(r"/api/projects/(\d+)/chapters", path)
+        if m_chap:
+            assert json is not None
+            return self._call(
+                api_module.create_chapter,
+                int(m_chap.group(1)),
+                ChapterCreateRequest(**json),
+            )
+
+        if path == "/api/upload":
+            assert files is not None and "file" in files
+            filename, content, _mime = files["file"]
+            chapter_id = params.get("chapter_id") if params else None
+            upload_file = _InMemoryUploadFile(filename=filename, content=content)
+            try:
+                coro = api_module.upload_page(file=upload_file, chapter_id=chapter_id)  # type: ignore[arg-type]
+                try:
+                    coro.send(None)
+                except StopIteration as stop:
+                    return _TestResponse(200, stop.value)
+                raise RuntimeError("Unexpected pending awaitable in upload_page")
+            except HTTPException as exc:
+                return _TestResponse(exc.status_code, {"detail": exc.detail})
+
+        raise ValueError(f"Unhandled POST route in test client: {url}")
+
+    def put(self, url: str, *, json: dict) -> _TestResponse:
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        user_id = int(qs["user_id"][0]) if "user_id" in qs else None
+        m_proj = re.fullmatch(r"/api/projects/(\d+)", parsed.path)
+        if m_proj:
+            return self._call(
+                api_module.update_project,
+                int(m_proj.group(1)),
+                ProjectUpdateRequest(**json),
+                user_id=user_id,
+            )
+        raise ValueError(f"Unhandled PUT route in test client: {url}")
+
+    def delete(self, url: str) -> _TestResponse:
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        user_id = int(qs["user_id"][0]) if "user_id" in qs else None
+
+        m_proj = re.fullmatch(r"/api/projects/(\d+)", parsed.path)
+        if m_proj:
+            return self._call(api_module.delete_project, int(m_proj.group(1)), user_id=user_id)
+
+        m_chap = re.fullmatch(r"/api/projects/(\d+)/chapters/(\d+)", parsed.path)
+        if m_chap:
+            return self._call(
+                api_module.delete_project_chapter,
+                int(m_chap.group(1)),
+                int(m_chap.group(2)),
+                user_id=user_id,
+            )
+
+        m_data = re.fullmatch(r"/api/projects/(\d+)/data", parsed.path)
+        if m_data:
+            return self._call(
+                api_module.delete_project_data,
+                int(m_data.group(1)),
+                user_id=user_id,
+            )
+
+        raise ValueError(f"Unhandled DELETE route in test client: {url}")
 
 
 class WorkspaceUploadIntegrationTests(unittest.TestCase):
@@ -37,11 +158,14 @@ class WorkspaceUploadIntegrationTests(unittest.TestCase):
         self.TestingSessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine
         )
+        self.temp_uploads_dir = BASE_DIR / "data" / "raw_images" / "_test_uploads_tmp"
+        self.temp_uploads_dir.mkdir(parents=True, exist_ok=True)
 
         # Patch SessionLocal across backend.api, backend.database, and services
         self.patchers = [
             patch("backend.api.SessionLocal", self.TestingSessionLocal),
             patch("backend.database.SessionLocal", self.TestingSessionLocal),
+            patch("backend.api.UPLOADS_DIR", self.temp_uploads_dir),
             patch(
                 "backend.api.WorkspaceService",
                 lambda: WorkspaceService(
@@ -60,7 +184,7 @@ class WorkspaceUploadIntegrationTests(unittest.TestCase):
         for patcher in self.patchers:
             patcher.start()
 
-        self.client = TestClient(app)
+        self.client = _DirectTestClient()
 
         # Seed test users: Owner, Translator, Typesetter, and Another Owner
         db = self.TestingSessionLocal()
@@ -87,6 +211,7 @@ class WorkspaceUploadIntegrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         for patcher in reversed(self.patchers):
             patcher.stop()
+        shutil.rmtree(self.temp_uploads_dir, ignore_errors=True)
 
     def test_create_project_and_prevent_duplicate_name_for_same_owner(self) -> None:
         """Owner can create project; duplicate title by same owner returns 400; another owner can reuse title."""
