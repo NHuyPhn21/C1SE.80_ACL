@@ -147,9 +147,10 @@ class TextRegion(Base):
 
     page = relationship("ComicPage", back_populates="text_regions")
 
+
 class SystemLog(Base):
     __tablename__ = 'system_logs'
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_id = Column(Integer, ForeignKey('queue_tasks.id'), nullable=False)
     level = Column(String(50), nullable=False)
@@ -157,3 +158,17 @@ class SystemLog(Base):
     timestamp = Column(DateTime, default=func.now())
 
     task = relationship("QueueTask", back_populates="logs")
+
+
+class ApiUsage(Base):
+    __tablename__ = "api_usage"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+    )
+    action = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
