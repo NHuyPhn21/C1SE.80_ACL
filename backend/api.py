@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -849,7 +850,7 @@ def _serialize_queue(db: Session, project_id: int, chapter_id: int | None = None
         ],
         "logs": [
             {"level": log.level, "message": log.message, "timestamp": log.timestamp.isoformat()}
-            for log in (task.logs[:30] if task else [])
+            for log in (sorted(task.logs, key=lambda item: item.id)[-30:] if task else [])
         ],
     }
 
@@ -867,6 +868,62 @@ def get_project_queue(project_id: int, chapter_id: int | None = None) -> dict:
         return _serialize_queue(db, project_id, chapter_id)
     finally:
         db.close()
+
+
+TERMINAL_TASK_STATUSES = {"COMPLETED", "FAILED", "AWAITING_REVIEW"}
+QUEUE_STREAM_POLL_SECONDS = 1.0
+QUEUE_STREAM_HEARTBEAT_SECONDS = 15.0
+QUEUE_STREAM_MAX_SECONDS = 30 * 60
+
+
+def _queue_event_stream(project_id: int, chapter_id: int | None):
+    """Yield SSE frames whenever the queue snapshot (task, pages or logs) changes.
+
+    The stream ends with an ``event: done`` frame once the task reaches a
+    terminal status, so the browser can stop listening instead of polling.
+    """
+    last_payload = None
+    last_sent = time.monotonic()
+    started = last_sent
+    while time.monotonic() - started < QUEUE_STREAM_MAX_SECONDS:
+        db = SessionLocal()
+        try:
+            snapshot = _serialize_queue(db, project_id, chapter_id)
+        finally:
+            db.close()
+        payload = json.dumps(snapshot, sort_keys=True)
+        task = snapshot["task"]
+        terminal = bool(task and task["status"] in TERMINAL_TASK_STATUSES)
+        if payload != last_payload:
+            last_payload = payload
+            last_sent = time.monotonic()
+            yield f"data: {payload}\n\n"
+        elif time.monotonic() - last_sent >= QUEUE_STREAM_HEARTBEAT_SECONDS:
+            last_sent = time.monotonic()
+            yield ": keepalive\n\n"
+        if terminal:
+            yield "event: done\ndata: {}\n\n"
+            return
+        time.sleep(QUEUE_STREAM_POLL_SECONDS)
+
+
+@router.get("/projects/{project_id}/queue/stream")
+def stream_project_queue(project_id: int, chapter_id: int | None = None):
+    db = SessionLocal()
+    try:
+        if db.query(Project).filter(Project.id == project_id).first() is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if chapter_id is not None and db.query(Chapter).filter(
+            Chapter.id == chapter_id, Chapter.project_id == project_id
+        ).first() is None:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+    finally:
+        db.close()
+    return StreamingResponse(
+        _queue_event_stream(project_id, chapter_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/projects/{project_id}/queue/start")

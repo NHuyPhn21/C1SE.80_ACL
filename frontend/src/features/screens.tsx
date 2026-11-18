@@ -1333,6 +1333,10 @@ export function QueueScreen({
 }) {
   const [queue, setQueue] = useState<QueueSnapshot | null>(null);
   const [chapterId, setChapterId] = useState<number | null>(null);
+  const [streamState, setStreamState] = useState<"connecting" | "live" | "done" | "polling">(
+    "connecting",
+  );
+  const [streamKey, setStreamKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -1354,16 +1358,67 @@ export function QueueScreen({
     }
   };
 
+  // Initial load (also resolves the chapter id the stream needs).
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(timer);
   }, [project.id, chapterId]);
+
+  // Live updates over SSE; fall back to 5s polling whenever the stream is down.
+  useEffect(() => {
+    if (chapterId === null || typeof EventSource === "undefined") {
+      if (chapterId !== null) {
+        const timer = window.setInterval(() => void refresh(), 5000);
+        return () => window.clearInterval(timer);
+      }
+      return;
+    }
+    let pollTimer: number | undefined;
+    const stopPolling = () => {
+      if (pollTimer !== undefined) {
+        window.clearInterval(pollTimer);
+        pollTimer = undefined;
+      }
+    };
+    const source = new EventSource(
+      `${API_ORIGIN}/api/projects/${project.id}/queue/stream?chapter_id=${chapterId}`,
+    );
+    setStreamState("connecting");
+    source.onopen = () => {
+      stopPolling();
+      setStreamState("live");
+    };
+    source.onmessage = (event) => {
+      try {
+        setQueue(JSON.parse(event.data) as QueueSnapshot);
+        setError("");
+        setLoading(false);
+      } catch {
+        /* ignore malformed frame */
+      }
+    };
+    source.addEventListener("done", () => {
+      source.close();
+      stopPolling();
+      setStreamState("done");
+    });
+    source.onerror = () => {
+      setStreamState("polling");
+      if (pollTimer === undefined) {
+        pollTimer = window.setInterval(() => void refresh(), 5000);
+      }
+      // EventSource retries by itself while CONNECTING; if it gave up, we keep polling.
+    };
+    return () => {
+      source.close();
+      stopPolling();
+    };
+  }, [project.id, chapterId, streamKey]);
 
   const start = async () => {
     if (!queue?.chapter_id) return;
     try {
       setQueue(await startProjectQueue(project.id, queue.chapter_id));
+      setStreamKey((key) => key + 1);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to start pipeline.");
     }
@@ -1421,7 +1476,14 @@ export function QueueScreen({
               </select>
             )}
             <button onClick={() => void refresh()}>
-              <AppIcon name="refresh" /> Auto-refresh: 5s
+              <AppIcon name="refresh" />{" "}
+              {streamState === "live"
+                ? "● Live Stream Connected"
+                : streamState === "done"
+                  ? "Stream finished · Refresh"
+                  : streamState === "connecting"
+                    ? "Connecting…"
+                    : "Auto-refresh: 5s (stream offline)"}
             </button>
             <button
               className="create-project-button"
