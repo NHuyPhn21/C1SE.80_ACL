@@ -2,28 +2,37 @@
 
 import json
 import os
+import time
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal, init_db
 from backend.image_utils import BASE_DIR, resolve_project_path
-from backend.models import ApiKeyConfig, Chapter, ComicPage, CustomGlossary, Project, QueueTask, SystemLog, TextRegion, User
+from backend.models import ApiKeyConfig, Chapter, ComicPage, CustomGlossary, Project, ProjectMembership, QueueTask, SystemLog, TextRegion, User
 from backend.schemas import (
+    VerifyResetTokenRequest,
+    ResetPasswordRequest,
     BubbleUpdateRequest,
+    OcrDraftRequest,
     BubbleCreateRequest,
     BubbleRestoreRequest,
     ApiKeyRequest,
     ChapterCreateRequest,
     ForgotPasswordRequest,
     GlossaryCreateRequest,
+    GlossaryUpdateRequest,
     LoginRequest,
     ProjectCreateRequest,
+    ProjectUpdateRequest,
     QueueStartRequest,
     RegisterRequest,
+    RoleUpdateRequest,
     TeamInviteRequest,
     TranslationRequest,
     TypesettingUpdateRequest,
@@ -35,7 +44,8 @@ from services.password_reset_mailer import (
 )
 from services.workspace_service import WorkspaceService, WorkspaceServiceError
 from services.team_service import TeamService, TeamServiceError
-from services.queue_service import QueueService, build_rendered_zip
+from services.queue_service import QueueService, build_release_manifest, build_rendered_zip
+from services.review_service import ReviewServiceError, flag_page_for_second_review, save_ocr_draft
 from services.typesetting_service import TypesettingServiceError, save_translation_and_render
 from services.settings_service import SettingsService, SettingsServiceError
 from backend.queue_worker import submit_pipeline_task
@@ -84,6 +94,26 @@ def _ensure_chapter(db: Session, chapter_id: int | None) -> Chapter:
     db.commit()
     db.refresh(chapter)
     return chapter
+
+
+def _check_project_role(project_id: int, user_id: int | None, allowed_roles: tuple[str, ...]) -> None:
+    if user_id is None:
+        return
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project.owner_id == user_id:
+            return
+        membership = db.query(ProjectMembership).filter(
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.user_id == user_id,
+        ).first()
+        if not membership or membership.project_role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Permission denied for this operation")
+    finally:
+        db.close()
 
 
 def _serialize_region(region: TextRegion) -> dict:
@@ -186,6 +216,41 @@ def forgot_password(request: ForgotPasswordRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/auth/verify-reset-token")
+def verify_reset_token(request: VerifyResetTokenRequest) -> dict:
+    try:
+        valid = SqliteAuthService().verify_password_reset_token(
+            request.token
+        )
+        return {"valid": valid}
+    except AuthServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/reset-password")
+def reset_password(request: ResetPasswordRequest) -> dict:
+    try:
+        SqliteAuthService().reset_password(
+            request.token,
+            request.new_password,
+        )
+        return {"message": "Password reset successfully."}
+    except AuthServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+
+def _project_owner_id(project_id: int) -> int:
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project.owner_id
+    finally:
+        db.close()
+
+
 def _serialize_project(summary) -> dict:
     return {
         "id": summary.id,
@@ -219,6 +284,43 @@ def create_project(user_id: int, request: ProjectCreateRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.put("/projects/{project_id}")
+def update_project(project_id: int, request: ProjectUpdateRequest, user_id: int | None = None) -> dict:
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
+    try:
+        service = WorkspaceService()
+        service.update_project(project_id, request.title, request.description)
+        owner_id = _project_owner_id(project_id)
+        summary = next(
+            item for item in service.list_projects(user_id if user_id is not None else owner_id)
+            if item.id == project_id
+        )
+        return _serialize_project(summary)
+    except WorkspaceServiceError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(project_id: int, user_id: int | None = None) -> dict:
+    _check_project_role(project_id, user_id, ("Owner",))
+    try:
+        stored_paths = WorkspaceService().delete_project(project_id)
+    except WorkspaceServiceError as exc:
+        message = str(exc)
+        status = 404 if "not found" in message.lower() else 409 if "running" in message else 400
+        raise HTTPException(status_code=status, detail=message) from exc
+    data_root = (BASE_DIR / "data").resolve()
+    for path_value in set(stored_paths):
+        resolved = Path(resolve_project_path(path_value)).resolve()
+        if resolved.is_file() and data_root in resolved.parents:
+            try:
+                resolved.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return {"deleted_project_id": project_id, "message": "Project and all its data were deleted."}
+
+
 @router.get("/projects/{project_id}/members")
 def list_project_members(project_id: int) -> list[dict]:
     try:
@@ -237,9 +339,40 @@ def list_project_members(project_id: int) -> list[dict]:
 
 
 @router.post("/projects/{project_id}/members")
-def invite_project_member(project_id: int, request: TeamInviteRequest) -> dict:
+def invite_project_member(
+    project_id: int, request: TeamInviteRequest, caller_user_id: int | None = None
+) -> dict:
     try:
+        _check_project_role(project_id, caller_user_id, ("Owner", "Project Manager"))
         member = TeamService().invite_member(project_id, request.email, request.role)
+        return {
+            "user_id": member.user_id,
+            "name": member.name,
+            "email": member.email,
+            "role": member.role,
+            "is_owner": member.is_owner,
+        }
+    except TeamServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/projects/{project_id}/members/{user_id}")
+def remove_project_member(project_id: int, user_id: int, caller_user_id: int | None = None) -> dict:
+    try:
+        _check_project_role(project_id, caller_user_id, ("Owner", "Project Manager"))
+        TeamService().remove_member(project_id, user_id)
+        return {"removed_user_id": user_id, "message": "Member removed from project."}
+    except TeamServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/projects/{project_id}/members/{user_id}")
+def update_project_member_role(
+    project_id: int, user_id: int, request: RoleUpdateRequest, caller_user_id: int | None = None
+) -> dict:
+    try:
+        _check_project_role(project_id, caller_user_id, ("Owner", "Project Manager"))
+        member = TeamService().update_member_role(project_id, user_id, request.role)
         return {
             "user_id": member.user_id,
             "name": member.name,
@@ -258,7 +391,12 @@ def create_chapter(project_id: int, request: ChapterCreateRequest) -> dict:
         project = db.query(Project).filter(Project.id == project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        chapter_number = db.query(Chapter).filter(Chapter.project_id == project_id).count() + 1
+        chapter_number = (
+            db.query(func.max(Chapter.chapter_number))
+            .filter(Chapter.project_id == project_id)
+            .scalar()
+            or 0
+        ) + 1
         chapter = Chapter(
             project_id=project_id,
             chapter_number=chapter_number,
@@ -278,6 +416,23 @@ def create_chapter(project_id: int, request: ChapterCreateRequest) -> dict:
         db.close()
 
 
+def _accessible_project_ids(db: Session, user_id: int) -> list[int]:
+    member_project_ids = db.query(ProjectMembership.project_id).filter(
+        ProjectMembership.user_id == user_id
+    )
+    rows = (
+        db.query(Project.id)
+        .filter(
+            or_(
+                Project.owner_id == user_id,
+                Project.id.in_(member_project_ids),
+            )
+        )
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
 @router.get("/settings")
 def get_settings(user_id: int) -> dict:
     db = SessionLocal()
@@ -285,6 +440,19 @@ def get_settings(user_id: int) -> dict:
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
+        accessible_ids = _accessible_project_ids(db, user_id)
+        has_gemini = False
+        if accessible_ids:
+            has_gemini = (
+                db.query(ApiKeyConfig)
+                .filter(
+                    ApiKeyConfig.project_id.in_(accessible_ids),
+                    ApiKeyConfig.provider == "gemini",
+                    ApiKeyConfig.is_active.is_(True),
+                )
+                .first()
+                is not None
+            )
         return {
             "user": {
                 "id": user.id,
@@ -294,13 +462,10 @@ def get_settings(user_id: int) -> dict:
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             },
             "providers": {
-                "gemini": db.query(ApiKeyConfig).join(Project).filter(
-                    Project.owner_id == user_id,
-                    ApiKeyConfig.provider == "gemini",
-                    ApiKeyConfig.is_active.is_(True),
-                ).first() is not None,
+                "gemini": has_gemini,
                 "sendgrid": bool(os.getenv("SENDGRID_API_KEY") and os.getenv("SENDGRID_FROM_EMAIL")),
             },
+            "quota_usage": SettingsService().get_quota_usage(user_id),
         }
     finally:
         db.close()
@@ -310,12 +475,16 @@ def get_settings(user_id: int) -> dict:
 def save_settings_api_key(user_id: int, request: ApiKeyRequest) -> dict[str, str]:
     db = SessionLocal()
     try:
-        project = db.query(Project).filter(
-            Project.id == request.project_id,
-            Project.owner_id == user_id,
-        ).first()
+        project = db.query(Project).filter(Project.id == request.project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
+        if project.owner_id != user_id:
+            membership = db.query(ProjectMembership).filter(
+                ProjectMembership.project_id == request.project_id,
+                ProjectMembership.user_id == user_id,
+            ).first()
+            if not membership or membership.project_role not in ("Owner", "Project Manager"):
+                raise HTTPException(status_code=403, detail="Only Owner or Project Manager can configure API keys.")
         SettingsService().save_api_key(request.project_id, request.provider, request.api_key)
         return {"message": "API key saved securely."}
     finally:
@@ -347,11 +516,8 @@ def test_settings_api_key(request: ApiKeyRequest) -> dict[str, str]:
 def test_saved_settings_api_key(user_id: int, project_id: int) -> dict[str, str]:
     db = SessionLocal()
     try:
-        project = db.query(Project).filter(
-            Project.id == project_id,
-            Project.owner_id == user_id,
-        ).first()
-        if project is None:
+        accessible_ids = _accessible_project_ids(db, user_id)
+        if project_id not in accessible_ids:
             raise HTTPException(status_code=404, detail="Project not found")
         api_key = SettingsService().load_api_key_for_pipeline(project_id)
         if not api_key:
@@ -362,56 +528,166 @@ def test_saved_settings_api_key(user_id: int, project_id: int) -> dict[str, str]
 
 
 @router.get("/settings/glossary")
-def get_glossary(user_id: int) -> list[dict]:
+def get_glossary(user_id: int, project_id: int | None = None) -> list[dict]:
     db = SessionLocal()
     try:
-        rows = (
-            db.query(CustomGlossary)
+        accessible_ids = _accessible_project_ids(db, user_id)
+        if not accessible_ids:
+            return []
+        query = (
+            db.query(CustomGlossary, Project.title)
             .join(Project, CustomGlossary.project_id == Project.id)
-            .filter(Project.owner_id == user_id)
-            .order_by(CustomGlossary.created_at.desc())
-            .all()
+            .filter(CustomGlossary.project_id.in_(accessible_ids))
         )
-        return [{"id": row.id, "project_id": row.project_id, "source_term": row.source_term, "target_term": row.target_term} for row in rows]
+        if project_id is not None:
+            query = query.filter(CustomGlossary.project_id == project_id)
+        rows = query.order_by(CustomGlossary.created_at.desc(), CustomGlossary.id.desc()).all()
+        return [
+            {
+                "id": glossary.id,
+                "project_id": glossary.project_id,
+                "project_title": project_title,
+                "source_term": glossary.source_term,
+                "target_term": glossary.target_term,
+            }
+            for glossary, project_title in rows
+        ]
     finally:
         db.close()
 
 
 @router.get("/settings/logs")
-def get_settings_logs(user_id: int) -> list[dict]:
+def get_settings_logs(
+    user_id: int,
+    project_id: int | None = None,
+    level: str | None = None,
+) -> list[dict]:
     db = SessionLocal()
     try:
-        rows = (
-            db.query(SystemLog)
+        accessible_ids = _accessible_project_ids(db, user_id)
+        if not accessible_ids:
+            return []
+        query = (
+            db.query(SystemLog, Project.id, Project.title)
             .join(QueueTask, SystemLog.task_id == QueueTask.id)
             .join(Chapter, QueueTask.chapter_id == Chapter.id)
             .join(Project, Chapter.project_id == Project.id)
-            .filter(Project.owner_id == user_id)
-            .order_by(SystemLog.timestamp.desc())
-            .limit(200)
-            .all()
+            .filter(Project.id.in_(accessible_ids))
         )
-        return [{"id": row.id, "level": row.level, "message": row.message, "timestamp": row.timestamp.isoformat() if row.timestamp else None} for row in rows]
+        if project_id is not None:
+            query = query.filter(Project.id == project_id)
+        if level and level.strip().upper() != "ALL":
+            query = query.filter(SystemLog.level == level.strip().upper())
+        rows = query.order_by(SystemLog.timestamp.desc(), SystemLog.id.desc()).limit(200).all()
+        return [
+            {
+                "id": log.id,
+                "project_id": proj_id,
+                "project_title": proj_title,
+                "level": log.level,
+                "message": log.message,
+                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            }
+            for log, proj_id, proj_title in rows
+        ]
     finally:
         db.close()
+
+
+@router.delete("/settings/logs")
+def clear_settings_logs(user_id: int, project_id: int | None = None) -> dict:
+    if project_id is not None:
+        _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
+    deleted_count = SettingsService().clear_logs(user_id, project_id)
+    return {
+        "deleted_count": deleted_count,
+        "message": f"Cleared {deleted_count} system log entries.",
+    }
 
 
 @router.post("/settings/glossary")
 def create_glossary(user_id: int, request: GlossaryCreateRequest) -> dict:
+    _check_project_role(request.project_id, user_id, ("Owner", "Project Manager", "Translator"))
     db = SessionLocal()
     try:
-        project = db.query(Project).filter(Project.id == request.project_id, Project.owner_id == user_id).first()
+        project = db.query(Project).filter(Project.id == request.project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        if not request.source_term.strip() or not request.target_term.strip():
-            raise HTTPException(status_code=400, detail="Both glossary terms are required")
-        row = CustomGlossary(project_id=project.id, source_term=request.source_term.strip(), target_term=request.target_term.strip())
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-        return {"id": row.id, "project_id": row.project_id, "source_term": row.source_term, "target_term": row.target_term}
+        project_title = project.title
     finally:
         db.close()
+
+    try:
+        entry = SettingsService().create_glossary(
+            request.project_id, request.source_term, request.target_term
+        )
+    except SettingsServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "id": entry.id,
+        "project_id": request.project_id,
+        "project_title": project_title,
+        "source_term": entry.source_term,
+        "target_term": entry.target_term,
+    }
+
+
+@router.put("/settings/glossary/{glossary_id}")
+def update_glossary_entry(
+    glossary_id: int,
+    user_id: int,
+    request: GlossaryUpdateRequest,
+) -> dict:
+    db = SessionLocal()
+    try:
+        row = db.query(CustomGlossary).filter(CustomGlossary.id == glossary_id).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Glossary entry not found")
+        project_id = row.project_id
+        project = db.query(Project).filter(Project.id == project_id).first()
+        project_title = project.title if project else ""
+    finally:
+        db.close()
+
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager", "Translator"))
+    try:
+        updated = SettingsService().update_glossary(
+            glossary_id, request.source_term, request.target_term
+        )
+    except SettingsServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "id": updated.id,
+        "project_id": project_id,
+        "project_title": project_title,
+        "source_term": updated.source_term,
+        "target_term": updated.target_term,
+    }
+
+
+@router.delete("/settings/glossary/{glossary_id}")
+def delete_glossary_entry(glossary_id: int, user_id: int) -> dict:
+    db = SessionLocal()
+    try:
+        row = db.query(CustomGlossary).filter(CustomGlossary.id == glossary_id).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Glossary entry not found")
+        project_id = row.project_id
+    finally:
+        db.close()
+
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager", "Translator"))
+    try:
+        SettingsService().delete_glossary(glossary_id)
+    except SettingsServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "deleted_id": glossary_id,
+        "message": "Glossary entry deleted.",
+    }
 
 
 @router.get("/projects/{project_id}/chapters")
@@ -441,7 +717,8 @@ def list_project_chapters(project_id: int) -> list[dict]:
 
 
 @router.delete("/projects/{project_id}/chapters/{chapter_id}")
-def delete_project_chapter(project_id: int, chapter_id: int) -> dict[str, int | str]:
+def delete_project_chapter(project_id: int, chapter_id: int, user_id: int | None = None) -> dict[str, int | str]:
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
     db = SessionLocal()
     try:
         chapter = db.query(Chapter).filter(
@@ -485,7 +762,8 @@ def delete_project_chapter(project_id: int, chapter_id: int) -> dict[str, int | 
 
 
 @router.delete("/projects/{project_id}/data")
-def delete_project_data(project_id: int) -> dict[str, int | str]:
+def delete_project_data(project_id: int, user_id: int | None = None) -> dict[str, int | str]:
+    _check_project_role(project_id, user_id, ("Owner", "Project Manager"))
     db = SessionLocal()
     try:
         project = db.query(Project).filter(Project.id == project_id).first()
@@ -519,14 +797,11 @@ def delete_project_data(project_id: int) -> dict[str, int | str]:
         db.close()
 
 
-def _serialize_queue(db: Session, project_id: int) -> dict:
-    chapters = (
-        db.query(Chapter)
-        .filter(Chapter.project_id == project_id)
-        .order_by(Chapter.id.desc())
-        .limit(1)
-        .all()
-    )
+def _serialize_queue(db: Session, project_id: int, chapter_id: int | None = None) -> dict:
+    chapter_query = db.query(Chapter).filter(Chapter.project_id == project_id)
+    if chapter_id is not None:
+        chapter_query = chapter_query.filter(Chapter.id == chapter_id)
+    chapters = chapter_query.order_by(Chapter.id.desc()).limit(1).all()
     chapter_ids = [chapter.id for chapter in chapters]
     pages = (
         db.query(ComicPage)
@@ -547,6 +822,13 @@ def _serialize_queue(db: Session, project_id: int) -> dict:
     task = tasks[0] if tasks else None
     return {
         "project_id": project_id,
+        "chapters": [
+            {"id": item.id, "chapter_number": item.chapter_number, "chapter_name": item.chapter_name}
+            for item in db.query(Chapter)
+            .filter(Chapter.project_id == project_id)
+            .order_by(Chapter.chapter_number.asc())
+            .all()
+        ],
         "chapter_id": task.chapter_id if task else (chapter_ids[0] if chapter_ids else None),
         "task": {
             "id": task.id,
@@ -568,20 +850,80 @@ def _serialize_queue(db: Session, project_id: int) -> dict:
         ],
         "logs": [
             {"level": log.level, "message": log.message, "timestamp": log.timestamp.isoformat()}
-            for log in (task.logs[:30] if task else [])
+            for log in (sorted(task.logs, key=lambda item: item.id)[-30:] if task else [])
         ],
     }
 
 
 @router.get("/projects/{project_id}/queue")
-def get_project_queue(project_id: int) -> dict:
+def get_project_queue(project_id: int, chapter_id: int | None = None) -> dict:
     db = SessionLocal()
     try:
         if db.query(Project).filter(Project.id == project_id).first() is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        return _serialize_queue(db, project_id)
+        if chapter_id is not None and db.query(Chapter).filter(
+            Chapter.id == chapter_id, Chapter.project_id == project_id
+        ).first() is None:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+        return _serialize_queue(db, project_id, chapter_id)
     finally:
         db.close()
+
+
+TERMINAL_TASK_STATUSES = {"COMPLETED", "FAILED", "AWAITING_REVIEW"}
+QUEUE_STREAM_POLL_SECONDS = 1.0
+QUEUE_STREAM_HEARTBEAT_SECONDS = 15.0
+QUEUE_STREAM_MAX_SECONDS = 30 * 60
+
+
+def _queue_event_stream(project_id: int, chapter_id: int | None):
+    """Yield SSE frames whenever the queue snapshot (task, pages or logs) changes.
+
+    The stream ends with an ``event: done`` frame once the task reaches a
+    terminal status, so the browser can stop listening instead of polling.
+    """
+    last_payload = None
+    last_sent = time.monotonic()
+    started = last_sent
+    while time.monotonic() - started < QUEUE_STREAM_MAX_SECONDS:
+        db = SessionLocal()
+        try:
+            snapshot = _serialize_queue(db, project_id, chapter_id)
+        finally:
+            db.close()
+        payload = json.dumps(snapshot, sort_keys=True)
+        task = snapshot["task"]
+        terminal = bool(task and task["status"] in TERMINAL_TASK_STATUSES)
+        if payload != last_payload:
+            last_payload = payload
+            last_sent = time.monotonic()
+            yield f"data: {payload}\n\n"
+        elif time.monotonic() - last_sent >= QUEUE_STREAM_HEARTBEAT_SECONDS:
+            last_sent = time.monotonic()
+            yield ": keepalive\n\n"
+        if terminal:
+            yield "event: done\ndata: {}\n\n"
+            return
+        time.sleep(QUEUE_STREAM_POLL_SECONDS)
+
+
+@router.get("/projects/{project_id}/queue/stream")
+def stream_project_queue(project_id: int, chapter_id: int | None = None):
+    db = SessionLocal()
+    try:
+        if db.query(Project).filter(Project.id == project_id).first() is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if chapter_id is not None and db.query(Chapter).filter(
+            Chapter.id == chapter_id, Chapter.project_id == project_id
+        ).first() is None:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+    finally:
+        db.close()
+    return StreamingResponse(
+        _queue_event_stream(project_id, chapter_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/projects/{project_id}/queue/start")
@@ -621,26 +963,54 @@ def start_project_queue(project_id: int, request: QueueStartRequest) -> dict:
         db.commit()
         task_id = task.id
         submit_pipeline_task(task_id, chapter.id)
-        return _serialize_queue(db, project_id)
+        return _serialize_queue(db, project_id, chapter.id)
     finally:
         db.close()
 
 
 @router.get("/projects/{project_id}/queue/export")
-def export_project_queue(project_id: int):
+def export_project_queue(project_id: int, chapter_id: int | None = None):
     db = SessionLocal()
     try:
         project = db.query(Project).filter(Project.id == project_id).first()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        files = QueueService().rendered_files(project.title)
-        if not files:
+        suffix = ""
+        if chapter_id is not None:
+            chapter = db.query(Chapter).filter(
+                Chapter.id == chapter_id, Chapter.project_id == project_id
+            ).first()
+            if chapter is None:
+                raise HTTPException(status_code=404, detail="Chapter not found")
+            suffix = f"-chapter-{chapter.chapter_number}"
+        entries = QueueService().rendered_entries(chapter_id=chapter_id, project_id=project_id)
+        if not entries:
             raise HTTPException(status_code=404, detail="No rendered pages available")
-        archive = build_rendered_zip(files)
+        labelled = []
+        for chapter, path in entries:
+            base_label = f"Chapter {chapter.chapter_number}"
+            custom_name = (chapter.chapter_name or "").strip()
+            if custom_name and custom_name.lower() != base_label.lower():
+                label = f"{base_label} - {custom_name}"
+            else:
+                label = base_label
+            labelled.append((label, path))
+        archive = build_rendered_zip(
+            [path for _, path in labelled],
+            manifest=build_release_manifest(project.title, labelled),
+        )
+        raw_filename = f"{project.title}{suffix}-rendered.zip"
+        ascii_filename = "".join(ch if ch.isascii() and ch not in '"\\/' else "_" for ch in raw_filename)
+        encoded_filename = quote(raw_filename)
         return StreamingResponse(
             iter([archive]),
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{project.title}-rendered.zip"'},
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{ascii_filename}"; '
+                    f"filename*=UTF-8''{encoded_filename}"
+                )
+            },
         )
     finally:
         db.close()
@@ -661,15 +1031,16 @@ async def upload_page(
     db = SessionLocal()
     try:
         chapter = _ensure_chapter(db, chapter_id)
-        page_count = (
-            db.query(ComicPage)
+        max_page_num = (
+            db.query(func.max(ComicPage.page_number))
             .filter(ComicPage.chapter_id == chapter.id)
-            .count()
+            .scalar()
+            or 0
         )
         relative_path = target.relative_to(BASE_DIR).as_posix()
         page = ComicPage(
             chapter_id=chapter.id,
-            page_number=page_count + 1,
+            page_number=max_page_num + 1,
             original_path=relative_path,
             status="PROCESSING",
         )
@@ -851,6 +1222,8 @@ def update_bubble(region_id: int, request: BubbleUpdateRequest) -> dict:
             region.bbox_json = json.dumps(request.bbox)
         if request.font_size is not None:
             region.font_size = request.font_size
+        if request.alignment is not None:
+            region.alignment = request.alignment
         db.commit()
         db.refresh(region)
         return _serialize_region(region)
@@ -906,6 +1279,7 @@ def restore_bubble(request: BubbleRestoreRequest) -> dict:
             original_text=request.original_text.strip(),
             translated_text=request.translated_text.strip(),
             font_size=request.font_size,
+            alignment=request.alignment,
         )
         db.add(region)
         db.commit()
@@ -929,6 +1303,7 @@ def delete_bubble(region_id: int) -> dict:
             "original_text": region.original_text or "",
             "translated_text": region.translated_text or "",
             "font_size": region.font_size,
+            "alignment": region.alignment,
         }
         db.delete(region)
         db.commit()
@@ -945,6 +1320,7 @@ def typeset_page(page_id: int, request: TypesettingUpdateRequest) -> dict:
             region_id=request.region_id,
             translated_text=request.translated_text,
             font_size=request.font_size,
+            alignment=request.alignment,
         )
     except TypesettingServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -955,5 +1331,55 @@ def typeset_page(page_id: int, request: TypesettingUpdateRequest) -> dict:
         if page is None:
             raise HTTPException(status_code=404, detail="Page not found")
         return _serialize_page(page)
+    finally:
+        db.close()
+
+
+def _page_response(page_id: int) -> dict:
+    db = SessionLocal()
+    try:
+        page = db.query(ComicPage).filter(ComicPage.id == page_id).first()
+        if page is None:
+            raise HTTPException(status_code=404, detail="Page not found")
+        return _serialize_page(page)
+    finally:
+        db.close()
+
+
+@router.post("/pages/{page_id}/ocr-draft")
+def save_page_ocr_draft(page_id: int, request: OcrDraftRequest) -> dict:
+    """Save OCR corrections only (no translation / rendering)."""
+    try:
+        save_ocr_draft(page_id, request.regions)
+    except ReviewServiceError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return _page_response(page_id)
+
+
+@router.post("/pages/{page_id}/flag")
+def flag_page(page_id: int) -> dict:
+    """Mark a page as needing a second review."""
+    try:
+        flag_page_for_second_review(page_id)
+    except ReviewServiceError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return _page_response(page_id)
+
+
+@router.get("/pages/{page_id}/download")
+def download_page(page_id: int):
+    db = SessionLocal()
+    try:
+        page = db.query(ComicPage).filter(ComicPage.id == page_id).first()
+        if page is None:
+            raise HTTPException(status_code=404, detail="Page not found")
+        if not page.rendered_path:
+            raise HTTPException(status_code=404, detail="This page has not been rendered yet")
+        path = Path(resolve_project_path(page.rendered_path)).resolve()
+        if not path.is_file() or (BASE_DIR / "data").resolve() not in path.parents:
+            raise HTTPException(status_code=404, detail="Rendered file not found")
+        return FileResponse(path, filename=f"page_{page.page_number:03d}{path.suffix}")
     finally:
         db.close()

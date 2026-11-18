@@ -110,6 +110,25 @@ class SqliteAuthAndTeamTests(unittest.TestCase):
         with self.assertRaises(TeamServiceError):
             self.team.invite_member(project.id, "missing@example.com", "Translator")
 
+    def test_update_member_role_changes_role_and_rejects_owner(self) -> None:
+        owner = self.auth.register("Owner", "owner@example.com", "password123")
+        member = self.auth.register("Member", "member@example.com", "password123")
+        project = self.team.get_or_create_project("Manga A", int(owner.user.id))
+
+        self.team.invite_member(project.id, member.user.email, "Translator")
+        updated = self.team.update_member_role(project.id, int(member.user.id), "Project Manager")
+        self.assertEqual(updated.role, "Project Manager")
+
+        # Reject changing owner role
+        with self.assertRaises(TeamServiceError):
+            self.team.update_member_role(project.id, int(owner.user.id), "Typesetter")
+
+        # Reject invalid roles
+        with self.assertRaises(TeamServiceError):
+            self.team.update_member_role(project.id, int(member.user.id), "Owner")
+        with self.assertRaises(TeamServiceError):
+            self.team.invite_member(project.id, member.user.email, "SuperAdmin")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import or_
 
 from backend.database import SessionLocal, init_db
 
@@ -99,7 +100,7 @@ class SettingsService:
         entry_id: int,
         source: str,
         target: str,
-    ) -> None:
+    ) -> GlossaryEntry:
         source, target = _validate_terms(source, target)
         db = self.session_factory()
         try:
@@ -114,6 +115,8 @@ class SettingsService:
             row.source_term = source
             row.target_term = target
             db.commit()
+            db.refresh(row)
+            return GlossaryEntry(row.id, row.source_term, row.target_term)
         except SettingsServiceError:
             db.rollback()
             raise
@@ -215,6 +218,120 @@ class SettingsService:
         provider: str = "gemini",
     ) -> str | None:
         return self.load_api_key(project_id, provider)
+
+    def clear_logs(self, user_id: int, project_id: int | None = None) -> int:
+        db = self.session_factory()
+        try:
+            member_project_ids = db.query(ProjectMembership.project_id).filter(
+                ProjectMembership.user_id == user_id
+            )
+            project_query = db.query(Project.id).filter(
+                or_(
+                    Project.owner_id == user_id,
+                    Project.id.in_(member_project_ids),
+                )
+            )
+            if project_id is not None:
+                project_query = project_query.filter(Project.id == project_id)
+
+            accessible_ids = [row[0] for row in project_query.all()]
+            if not accessible_ids:
+                return 0
+
+            task_ids = [
+                row[0]
+                for row in db.query(QueueTask.id)
+                .join(Chapter, QueueTask.chapter_id == Chapter.id)
+                .filter(Chapter.project_id.in_(accessible_ids))
+                .all()
+            ]
+            if not task_ids:
+                return 0
+
+            deleted = (
+                db.query(SystemLog)
+                .filter(SystemLog.task_id.in_(task_ids))
+                .delete(synchronize_session=False)
+            )
+            db.commit()
+            return int(deleted or 0)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def get_quota_usage(self, user_id: int) -> dict:
+        monthly_limit = max(1, int(os.getenv("ACL_MONTHLY_QUOTA", "500")))
+        db = self.session_factory()
+        try:
+            member_project_ids = db.query(ProjectMembership.project_id).filter(
+                ProjectMembership.user_id == user_id
+            )
+            accessible_ids = [
+                row[0]
+                for row in db.query(Project.id)
+                .filter(
+                    or_(
+                        Project.owner_id == user_id,
+                        Project.id.in_(member_project_ids),
+                    )
+                )
+                .all()
+            ]
+            if not accessible_ids:
+                return {
+                    "requests_this_month": 0,
+                    "monthly_limit": monthly_limit,
+                    "usage_percent": 0,
+                    "translated_bubbles": 0,
+                    "completed_pages": 0,
+                    "glossary_terms": 0,
+                }
+
+            translated_bubbles = (
+                db.query(TextRegion)
+                .join(ComicPage, TextRegion.page_id == ComicPage.id)
+                .join(Chapter, ComicPage.chapter_id == Chapter.id)
+                .filter(
+                    Chapter.project_id.in_(accessible_ids),
+                    TextRegion.translated_text.isnot(None),
+                    TextRegion.translated_text != "",
+                )
+                .count()
+            )
+            completed_pages = (
+                db.query(ComicPage)
+                .join(Chapter, ComicPage.chapter_id == Chapter.id)
+                .filter(
+                    Chapter.project_id.in_(accessible_ids),
+                    ComicPage.status == "COMPLETED",
+                )
+                .count()
+            )
+            pipeline_tasks = (
+                db.query(QueueTask)
+                .join(Chapter, QueueTask.chapter_id == Chapter.id)
+                .filter(Chapter.project_id.in_(accessible_ids))
+                .count()
+            )
+            glossary_terms = (
+                db.query(CustomGlossary)
+                .filter(CustomGlossary.project_id.in_(accessible_ids))
+                .count()
+            )
+            requests_this_month = translated_bubbles + pipeline_tasks
+            usage_percent = min(100, round((requests_this_month / monthly_limit) * 100))
+            return {
+                "requests_this_month": requests_this_month,
+                "monthly_limit": monthly_limit,
+                "usage_percent": usage_percent,
+                "translated_bubbles": translated_bubbles,
+                "completed_pages": completed_pages,
+                "glossary_terms": glossary_terms,
+            }
+        finally:
+            db.close()
 
 
     def get_project_quota_usage(self, project_id: int) -> dict:

@@ -1,16 +1,27 @@
 import os
 from pathlib import Path
-import torch
 from PIL import Image
-from ultralytics import YOLO
-from manga_ocr import MangaOcr
 
-# --- BẢN VÁ PYTORCH 2.5+ CHO ULTRALYTICS YOLO ---
-_original_load = torch.load
-def patched_load(*args, **kwargs):
-    kwargs["weights_only"] = False
-    return _original_load(*args, **kwargs)
-torch.load = patched_load
+try:
+    import torch
+    # --- BẢN VÁ PYTORCH 2.5+ CHO ULTRALYTICS YOLO ---
+    _original_load = torch.load
+    def patched_load(*args, **kwargs):
+        kwargs["weights_only"] = False
+        return _original_load(*args, **kwargs)
+    torch.load = patched_load
+except ImportError:
+    torch = None
+
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
+
+try:
+    from manga_ocr import MangaOcr
+except ImportError:
+    MangaOcr = None
 
 # Tự động xác định thư mục gốc và đường dẫn trọng số YOLO
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,6 +35,11 @@ _MOCR_MODEL = None
 def get_ai_models(yolo_weight_path: str = DEFAULT_YOLO_WEIGHTS):
     """Chỉ tải YOLO và MangaOCR vào RAM/GPU đúng 1 lần duy nhất trong suốt phiên chạy."""
     global _YOLO_MODEL, _MOCR_MODEL
+
+    if YOLO is None or MangaOcr is None:
+        raise RuntimeError(
+            "Thiếu thư viện AI ('ultralytics' hoặc 'manga-ocr'). Vui lòng cài đặt đầy đủ trước khi chạy pipeline OCR."
+        )
 
     if _YOLO_MODEL is None:
         print(f"⏳ [Init] Đang nạp mô hình YOLOv8 từ: {yolo_weight_path}...")
