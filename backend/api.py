@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -197,11 +197,20 @@ def register(request: RegisterRequest) -> dict:
 
 
 @router.post("/auth/forgot-password")
-def forgot_password(request: ForgotPasswordRequest) -> dict:
+def forgot_password(
+    request: ForgotPasswordRequest,
+    http_request: Request = None,  # type: ignore[assignment]
+) -> dict:
     try:
         token = SqliteAuthService().request_password_reset(request.email)
         if token:
-            base_url = os.getenv("APP_BASE_URL", "http://localhost:5173").rstrip("/")
+            configured_url = os.getenv("APP_BASE_URL", "").strip().rstrip("/")
+            origin_header = (
+                (http_request.headers.get("origin") or "").strip().rstrip("/")
+                if http_request is not None
+                else ""
+            )
+            base_url = configured_url or origin_header or "http://localhost:5173"
             send_password_reset_email(
                 request.email.strip().lower(),
                 f"{base_url}/reset-password?token={token}",
@@ -1142,6 +1151,24 @@ def translate_page(request: TranslationRequest) -> dict:
         if final_output_path:
             page.rendered_path = str(Path(final_output_path).relative_to(BASE_DIR)).replace("\\", "/")
             page.status = "COMPLETED"
+            chapter_pages = db.query(ComicPage).filter(ComicPage.chapter_id == page.chapter_id).all()
+            if chapter_pages and all(item.id == page.id or item.status == "COMPLETED" for item in chapter_pages):
+                latest_task = (
+                    db.query(QueueTask)
+                    .filter(QueueTask.chapter_id == page.chapter_id)
+                    .order_by(QueueTask.id.desc())
+                    .first()
+                )
+                if latest_task is not None and latest_task.status != "COMPLETED":
+                    latest_task.status = "COMPLETED"
+                    latest_task.progress_percent = 100
+                    db.add(
+                        SystemLog(
+                            task_id=latest_task.id,
+                            level="INFO",
+                            message="All chapter pages translated and typeset (100%).",
+                        )
+                    )
         else:
             page.status = "TRANSLATED"
         db.commit()

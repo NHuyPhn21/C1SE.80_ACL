@@ -2,40 +2,65 @@ import os
 from pathlib import Path
 from PIL import Image
 
-try:
-    import torch
-    # --- BẢN VÁ PYTORCH 2.5+ CHO ULTRALYTICS YOLO ---
-    _original_load = torch.load
-    def patched_load(*args, **kwargs):
-        kwargs["weights_only"] = False
-        return _original_load(*args, **kwargs)
-    torch.load = patched_load
-except ImportError:
-    torch = None
-
-try:
-    from ultralytics import YOLO
-except ImportError:
-    YOLO = None
-
-try:
-    from manga_ocr import MangaOcr
-except ImportError:
-    MangaOcr = None
-
 # Tự động xác định thư mục gốc và đường dẫn trọng số YOLO
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_YOLO_WEIGHTS = str(BASE_DIR / "models" / "yolo" / "manga_v14" / "weights" / "best.pt")
+
+torch = None
+YOLO = None
+MangaOcr = None
+_TORCH_PATCHED = False
 
 # --- BIẾN TOÀN CỤC LƯU CACHE MODEL TRONG RAM/VRAM ---
 _YOLO_MODEL = None
 _MOCR_MODEL = None
 
 
+def _ensure_ai_imports() -> None:
+    """Lazy-load heavy AI libraries (torch, ultralytics, manga-ocr) only when OCR runs."""
+    global torch, YOLO, MangaOcr, _TORCH_PATCHED
+
+    if not _TORCH_PATCHED:
+        try:
+            import torch as _torch
+
+            _original_load = _torch.load
+
+            def patched_load(*args, **kwargs):
+                kwargs["weights_only"] = False
+                return _original_load(*args, **kwargs)
+
+            _torch.load = patched_load
+            torch = _torch
+        except ImportError:
+            torch = None
+        _TORCH_PATCHED = True
+
+    if YOLO is None:
+        yolo_cfg_dir = BASE_DIR / "data" / ".ultralytics"
+        yolo_cfg_dir.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("YOLO_CONFIG_DIR", str(yolo_cfg_dir))
+        try:
+            from ultralytics import YOLO as _YOLO
+
+            YOLO = _YOLO
+        except ImportError:
+            YOLO = None
+
+    if MangaOcr is None:
+        try:
+            from manga_ocr import MangaOcr as _MangaOcr
+
+            MangaOcr = _MangaOcr
+        except ImportError:
+            MangaOcr = None
+
+
 def get_ai_models(yolo_weight_path: str = DEFAULT_YOLO_WEIGHTS):
     """Chỉ tải YOLO và MangaOCR vào RAM/GPU đúng 1 lần duy nhất trong suốt phiên chạy."""
     global _YOLO_MODEL, _MOCR_MODEL
 
+    _ensure_ai_imports()
     if YOLO is None or MangaOcr is None:
         raise RuntimeError(
             "Thiếu thư viện AI ('ultralytics' hoặc 'manga-ocr'). Vui lòng cài đặt đầy đủ trước khi chạy pipeline OCR."

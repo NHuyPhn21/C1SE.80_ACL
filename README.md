@@ -1,10 +1,18 @@
-# ACL
+# ACL — Automated Comic Localization (C1SE.80)
 
-## Cài đặt môi trường
+Hệ thống Web hỗ trợ dịch thuật và biên tập truyện tranh tự động từ tiếng Nhật sang tiếng Việt (**YOLOv8 Bubble Detection → MangaOCR → Interactive Review → LaMa Inpainting → Gemini Batch Translation + Custom Glossary → Collision-Aware Typesetting**).
 
-Yêu cầu Python 3.11 trên Windows.
+---
 
-Mở PowerShell tại thư mục project và chạy:
+## 1. Yêu cầu hệ thống & Cài đặt môi trường
+
+- **Python 3.11** (khuyến nghị chạy trên Windows 10/11 64-bit, hỗ trợ GPU CUDA nếu có).
+- **Node.js 20+** và **npm**.
+- File trọng số YOLOv8 đặt tại: `models/yolo/manga_v14/weights/best.pt`.
+
+### Cài đặt Backend (Python)
+
+Mở PowerShell tại thư mục gốc của dự án:
 
 ```powershell
 py -3.11 -m venv venv
@@ -13,88 +21,96 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Nếu PowerShell chặn chạy script kích hoạt môi trường, chạy một lần:
+*(Nếu PowerShell chặn chạy script lần đầu, chạy lệnh: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`)*
 
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-Sau đó kích hoạt lại môi trường bằng `.\venv\Scripts\Activate.ps1`.
-
-## Tạo database
-
-Database sử dụng SQLite và được lưu tại `acl.db` ở thư mục gốc project. Sau khi
-cài dependencies, chạy:
+Khởi tạo cơ sở dữ liệu SQLite (`acl.db`):
 
 ```powershell
 python setup_db.py
 ```
 
-Lệnh này gọi `backend.database.init_db()` và tạo các bảng theo model hiện tại.
-Schema hiện tại bao gồm bảng `password_reset_tokens` cho quy trình đặt lại mật
-khẩu. Lệnh khởi tạo chỉ tạo các bảng còn thiếu; để tạo database sạch hoàn toàn,
-đóng server, xóa riêng `acl.db`, rồi chạy lại `python setup_db.py`.
-
-Kiểm tra nhanh database đã được tạo:
+Sao chép file cấu hình mẫu `.env.example` sang `.env` và cập nhật biến môi trường cần thiết:
 
 ```powershell
-python -c "import sqlite3; c=sqlite3.connect('acl.db'); print(c.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\").fetchall()); c.close()"
+Copy-Item .env.example .env
 ```
 
-## Chạy ứng dụng React + FastAPI
-
-Sao chép `.env.example` thành `.env` và điền các API key cần thiết. Mở hai
-PowerShell riêng:
+### Cài đặt Frontend (React + TypeScript + Vite)
 
 ```powershell
-.\run_backend.bat
+cd frontend
+npm install
+cd ..
 ```
+
+---
+
+## 2. Chạy ứng dụng ở chế độ Development (2 cổng)
+
+Bạn có thể bấm đúp trực tiếp vào 2 file `.bat` ở thư mục gốc hoặc mở 2 cửa sổ PowerShell:
+
+- **Terminal 1 — Backend FastAPI (`http://127.0.0.1:5000`)**:
+  ```powershell
+  .\run_backend.bat
+  ```
+  *(Hoặc: `.\venv\Scripts\python.exe -m uvicorn fastapi_app:app --reload --host 127.0.0.1 --port 5000`)*
+
+- **Terminal 2 — Frontend Vite (`http://localhost:5173`)**:
+  ```powershell
+  .\run_frontend.bat
+  ```
+  *(Hoặc: `npm --prefix frontend run dev`)*
+
+Truy cập:
+- **Giao diện Web ACL**: `http://localhost:5173`
+- **Tài liệu API Swagger UI**: `http://127.0.0.1:5000/docs`
+- **Health Check**: `http://127.0.0.1:5000/health`
+
+---
+
+## 3. Chạy chế độ Production / Demo 1 cổng duy nhất (Single-Port Deployment)
+
+Khi đã build Frontend (`frontend/dist`), FastAPI (`fastapi_app.py`) tự động phục vụ luôn cả giao diện React SPA lẫn API và ảnh `/media` trên cùng 1 cổng `5000` (rất tiện khi public qua Cloudflare Tunnel / ngrok hoặc đóng gói):
 
 ```powershell
-.\run_frontend.bat
+npm --prefix frontend run build
+.\venv\Scripts\python.exe -m uvicorn fastapi_app:app --host 0.0.0.0 --port 5000
 ```
 
-Frontend mở tại `http://localhost:5173`, API docs tại
-`http://localhost:8000/docs`.
+Sau đó mở trực tiếp `http://127.0.0.1:5000` trên trình duyệt.
 
-API chính:
+---
 
-- `POST /api/auth/login` — xác thực tài khoản local.
-- `POST /api/auth/register` — tạo tài khoản mới trong bảng `users`.
-- `GET /api/projects?user_id={id}` — đọc project thật theo owner/membership.
-- `POST /api/projects?user_id={id}` — tạo project mới trong SQLite.
-- `GET /api/projects/{id}/queue` — đọc tiến độ queue và từng trang thật.
-- `POST /api/projects/{id}/queue/start` — tạo queue task cho chapter.
-- `GET /api/projects/{id}/queue/export` — tải ZIP các trang đã render.
-- `POST /api/upload` — lưu ảnh và chạy YOLO/MangaOCR.
-- `POST /api/translate` — dịch các vùng chữ của một trang.
-- `GET /api/chapters/{chapter_id}` — đọc chapter, pages và bubbles.
-- `PUT /api/update-bubble/{region_id}` — lưu bản dịch hoặc tọa độ kéo thả.
-- `POST /api/pages/{page_id}/typeset` — lưu bản dịch, font size và render lại trang.
-- `POST /api/projects/{project_id}/queue/start` — tạo task và chạy pipeline AI chapter ở worker nền.
-- `GET /api/settings?user_id={id}` — đọc trạng thái tài khoản và provider mà không trả secret.
-- `GET /api/settings/glossary?user_id={id}` — đọc glossary thật của các project người dùng sở hữu.
-- `POST /api/settings/glossary?user_id={id}` — thêm một term vào glossary của project.
-- `GET /api/settings/logs?user_id={id}` — đọc system logs của các pipeline task.
-
-## Cấu trúc thư mục
+## 4. Kiến trúc thư mục
 
 ```text
-backend/       FastAPI routes, request schemas, database models and utilities
-ai_core/       YOLO, MangaOCR and Gemini integration
-services/      Auth, workspace, queue, review and typesetting services
-models/        Shared API/auth domain models
-frontend/      React/Vite application
-  src/api/     Domain API modules and shared request client
-  src/features Authentication and application screens
-tests/         Backend and service tests
-assets/fonts/  Fonts required by the image renderer
-data/          Runtime uploads and rendered output (ignored by Git)
+ai_core/         Mô-đun AI: YOLOv8 Detection, MangaOCR, Gemini Translation + Glossary
+backend/         FastAPI routes (api.py), SQLAlchemy ORM (models.py), Queue Worker, Image Inpainting & Typesetting
+services/        Tầng nghiệp vụ: Auth, Workspace, Team RBAC, Queue & ZIP Export, Review, Typesetting, Settings & Quota
+models/          Domain models dùng chung (ApiError, Quota...)
+frontend/        Ứng dụng React 19 + TypeScript + Vite (8 màn hình Studio)
+assets/fonts/    Bộ font tiếng Việt chuyên dụng cho truyện tranh
+data/            Thư mục lưu ảnh gốc upload, ảnh xoá chữ và ảnh xuất bản (gitignored)
+tests/           Bộ 73+ Unit & Integration Tests tự động
+docs/            Tài liệu Kiểm thử (Test Plan) & Tài liệu tham chiếu Kiến trúc / CSDL
 ```
 
-Legacy Streamlit pages, components, session helpers, mock quota/evaluation
-adapters and design-only assets are not part of the current application.
+---
 
-Queue Monitor tự động cập nhật trạng thái task mỗi 5 giây. Worker nền xử lý lần lượt
-các trang trong chapter, cập nhật tiến độ và log vào SQLite; lỗi từng trang sẽ đánh
-dấu task là `FAILED` và ghi nguyên nhân vào system log.
+## 5. Các tính năng nổi bật
+
+1. **Xác thực & Khôi phục mật khẩu**: Đăng ký, đăng nhập (mật khẩu băm an toàn), quên mật khẩu và đặt lại mật khẩu qua token một lần (`/reset-password?token=...`).
+2. **Quản lý Đa Dự án & Đa Chương (Multi-Chapter Workspace)**: Tạo/sửa/xoá Project, tạo nhiều Chapter tự tăng số thứ tự, kiểm tra định dạng & giới hạn batch upload (`<= 50 trang`, `<= 100MB`).
+3. **Làm việc nhóm & Phân quyền RBAC**: 4 vai trò (`Owner`, `Project Manager`, `Translator`, `Typesetter`) được kiểm soát quyền chặt chẽ ở cả UI lẫn API.
+4. **Queue Monitor thời gian thực qua SSE**: Luồng **Server-Sent Events (`GET /api/projects/{id}/queue/stream`)** đẩy tiến độ xử lý từng trang và System Logs tức thì, tự động fallback về polling khi mất mạng.
+5. **Interactive Review Studio**: Kéo/thả/vẽ mới/xoá & hoàn tác (Undo) khung bóng thoại trực tiếp trên trang truyện, lưu nháp OCR (`Save OCR Draft`), gắn cờ kiểm duyệt (`Flag Page`), điều hướng nhanh bằng phím `←` / `→`.
+6. **Typesetting Studio & Xuất bản ZIP**: Tuỳ chỉnh lời thoại tiếng Việt, cỡ chữ, căn lề (`left | center | right`), tải ảnh lẻ hoặc đóng gói ZIP theo Chapter kèm `RELEASE_MANIFEST.txt`.
+7. **Personal Settings, Custom Glossary & API Quota Enforcement**: Lưu Gemini API Key mã hoá Fernet, CRUD từ điển thuật ngữ riêng theo từng bộ truyện, dọn dẹp System Logs và kiểm soát hạn mức tháng (HTTP `429 Too Many Requests`).
+
+---
+
+## 6. Chạy kiểm thử tự động (Automated Tests)
+
+```powershell
+.\venv\Scripts\python.exe -m pytest tests/test_api_quota.py tests/test_quota_http.py tests/test_queue_stream.py tests/test_workspace_upload_integration.py tests/test_review_typeset_api.py tests/test_workspace_and_queue.py tests/test_quan_workspace_queue.py tests/test_settings_and_typesetting.py tests/test_sqlite_auth_and_team.py tests/test_review_service.py tests/test_auth_service.py tests/test_password_reset_mailer.py tests/test_error_handler.py -q
+```

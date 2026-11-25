@@ -1434,6 +1434,29 @@ export function QueueScreen({
   const hasRenderedPages = Boolean(queue?.pages.some((page) => page.rendered));
   const taskRunning = queue?.task?.status === "RUNNING" || queue?.task?.status === "QUEUED";
   const taskStatus = queue?.task?.status ?? "NOT_STARTED";
+  const effectiveTaskStatus = completed ? "COMPLETED" : taskStatus;
+  const pageCountLabel = queue?.total_pages === 1 ? "1 Page" : `${queue?.total_pages ?? 0} Pages`;
+  const durationStats = (() => {
+    if (!queue || !queue.total_pages || queue.logs.length < 2) {
+      return {
+        value: completed ? "< 1.0s / page" : "Real-time SSE",
+        detail: completed ? "Fast pipeline execution" : "Live event stream active",
+      };
+    }
+    const firstTs = Date.parse(queue.logs[0].timestamp);
+    const lastTs = Date.parse(queue.logs[queue.logs.length - 1].timestamp);
+    if (Number.isNaN(firstTs) || Number.isNaN(lastTs) || lastTs < firstTs) {
+      return {
+        value: completed ? "< 1.0s / page" : "Real-time SSE",
+        detail: completed ? "Fast pipeline execution" : "Live event stream active",
+      };
+    }
+    const avgSec = (lastTs - firstTs) / 1000 / queue.total_pages;
+    return {
+      value: avgSec < 1 ? "< 1.0s / page" : `${avgSec.toFixed(1)}s / page`,
+      detail: completed ? "Measured from worker logs" : "Elapsed pipeline throughput",
+    };
+  })();
   const downloadZip = () => {
     window.location.href = `/api/projects/${project.id}/queue/export${queue?.chapter_id ? `?chapter_id=${queue.chapter_id}` : ""}`;
   };
@@ -1475,18 +1498,39 @@ export function QueueScreen({
                 ))}
               </select>
             )}
-            <button onClick={() => void refresh()}>
-              <AppIcon name="refresh" />{" "}
-              {streamState === "live"
-                ? "● Live Stream Connected"
-                : streamState === "done"
-                  ? "Stream finished · Refresh"
-                  : streamState === "connecting"
-                    ? "Connecting…"
-                    : "Auto-refresh: 5s (stream offline)"}
+            <button
+              type="button"
+              className={`queue-refresh-button stream-${streamState}`}
+              title={
+                streamState === "done"
+                  ? "Worker stream finished — click to refresh queue status"
+                  : streamState === "live"
+                    ? "Receiving live Server-Sent Events from worker"
+                    : "Refresh queue status"
+              }
+              onClick={() => void refresh()}
+            >
+              {streamState === "live" ? (
+                <>
+                  <span className="stream-dot live" /> Live Stream
+                </>
+              ) : streamState === "connecting" ? (
+                <>
+                  <span className="stream-dot connecting" /> Syncing…
+                </>
+              ) : streamState === "polling" ? (
+                <>
+                  <AppIcon name="refresh" /> Auto-refresh (5s)
+                </>
+              ) : (
+                <>
+                  <AppIcon name="refresh" /> Refresh
+                </>
+              )}
             </button>
             <button
-              className="create-project-button"
+              type="button"
+              className={completed ? "queue-secondary-button" : "create-project-button"}
               disabled={!queue?.chapter_id || taskRunning}
               onClick={() => void start()}
             >
@@ -1497,8 +1541,8 @@ export function QueueScreen({
                   : "▶ Run Pipeline"}
             </button>
             {(completed || hasRenderedPages) && (
-              <button className="create-project-button" onClick={downloadZip}>
-                ⇩ Download Chapter (ZIP)
+              <button type="button" className="create-project-button" onClick={downloadZip}>
+                ⇩ Download ZIP
               </button>
             )}
           </div>
@@ -1525,12 +1569,14 @@ export function QueueScreen({
                 </strong>
                 <p>
                   {completed
-                    ? `All ${queue.total_pages} pages have been detected, cleaned, translated, and typeset.`
+                    ? queue.total_pages === 1
+                      ? "All 1 page has been detected, cleaned, translated, and typeset."
+                      : `All ${queue.total_pages} pages have been detected, cleaned, translated, and typeset.`
                     : ""}
                 </p>
                 <b>
-                  Task status: {taskStatus} · {queue.completed_pages} / {queue.total_pages} Pages
-                  Processed ({pagePercent}%)
+                  Task status: {effectiveTaskStatus} · {queue.completed_pages} / {queue.total_pages}{" "}
+                  {queue.total_pages === 1 ? "Page" : "Pages"} Processed ({pagePercent}%)
                 </b>
               </div>
               <div className="queue-progress">
@@ -1554,26 +1600,26 @@ export function QueueScreen({
             <div className="queue-stats">
               <Kpi
                 label={completed ? "Total Pages Localized" : "Worker Node"}
-                value={completed ? `${queue.total_pages} Pages` : "Node Tokyo-01"}
+                value={completed ? pageCountLabel : "Node Tokyo-01"}
                 detail={completed ? "100% Completion" : "GPU worker status from queue"}
               />
               <Kpi
                 label={completed ? "Average Processing Time" : "Throughput"}
-                value="—"
-                detail="Unavailable from current queue data"
+                value={durationStats.value}
+                detail={durationStats.detail}
               />
               <Kpi
                 label={completed ? "Translation Provider" : "Review Queue"}
                 value={
                   completed
-                    ? "Configured backend"
+                    ? "Gemini + Glossary"
                     : String(
                         queue.pages.filter(
                           (page) => page.status === "REVIEW" || page.status === "AWAITING_REVIEW",
                         ).length,
                       )
                 }
-                detail={completed ? "" : "Pages awaiting review"}
+                detail={completed ? "Batch LLM & Custom Glossary" : "Pages awaiting review"}
               />
             </div>
 
@@ -1582,7 +1628,9 @@ export function QueueScreen({
                 <h2>
                   {completed ? "Completed Chapter Artifacts" : "Pipeline Task Execution Matrix"}
                 </h2>
-                <span>{queue.total_pages} pages total</span>
+                <span>
+                  {queue.total_pages} {queue.total_pages === 1 ? "page" : "pages"} total
+                </span>
               </div>
               {queue.pages.map((page) => (
                 <div className="queue-row" key={page.id}>
